@@ -55,6 +55,47 @@ Frontend disponible por defecto en `http://localhost:5173`.
 - Navegacion y datos: `react-router-dom`, `axios`, `@tanstack/react-query`
 - Estado y formularios: `zustand`, `react-hook-form`, `@hookform/resolvers`, `zod`
 
+## Autenticacion base
+
+El backend incluye un `AuthModule` inicial con JWT access/refresh y RBAC.
+
+- Usuario mock MVP:
+  - Email: `admin@local.test`
+  - Password: `Admin123!`
+  - Rol: `Admin`
+- El login devuelve `accessToken` y guarda `refreshToken` en cookie `httpOnly` (`sameSite=lax`, `secure=false` en local).
+
+### Como probar
+
+1. Iniciar backend:
+
+```bash
+cd backend
+npm run start:dev
+```
+
+2. Login (`POST /auth/login`):
+
+```bash
+curl -i -X POST http://localhost:3000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@local.test","password":"Admin123!"}'
+```
+
+3. Endpoint protegido (`GET /auth/me`) con Bearer token:
+
+```bash
+curl -X GET http://localhost:3000/auth/me \
+  -H "Authorization: Bearer TU_ACCESS_TOKEN"
+```
+
+4. Refresh (`POST /auth/refresh`) usando cookie:
+
+```bash
+curl -i -X POST http://localhost:3000/auth/refresh \
+  --cookie "refreshToken=TU_REFRESH_TOKEN"
+```
+
 ## Proximo enfoque MVP
 
 - Definir modulos de autenticacion (access + refresh) y RBAC en backend.
