@@ -7,13 +7,13 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import { Roles } from './decorators/roles.decorator';
 import { LoginDto } from './dto/login.dto';
 import { ALL_ROLES } from './enums/role.enum';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
-import { AuthenticatedUser } from './interfaces/authenticated-user.interface';
+import type { AuthenticatedUser } from './interfaces/authenticated-user.interface';
 import { AuthService } from './auth.service';
 
 @Controller('auth')

@@ -4,6 +4,8 @@ import { JwtService } from '@nestjs/jwt';
 import { LoginDto } from './dto/login.dto';
 import { Role } from './enums/role.enum';
 
+type JwtExpiresIn = `${number}${'ms' | 's' | 'm' | 'h' | 'd' | 'w' | 'y'}`;
+
 interface MockUser {
   id: string;
   email: string;
@@ -80,16 +82,17 @@ export class AuthService {
       role: user.role,
       name: user.name,
     };
+    const accessTokenExpiresIn =
+      this.configService.get<string>('ACCESS_TOKEN_EXPIRES_IN') ?? '15m';
+    const refreshTokenExpiresIn =
+      this.configService.get<string>('REFRESH_TOKEN_EXPIRES_IN') ?? '7d';
 
     const accessToken = await this.jwtService.signAsync(payload, {
       secret: this.configService.get<string>(
         'JWT_ACCESS_SECRET',
         'change-me-access-secret',
       ),
-      expiresIn: this.configService.get<string>(
-        'ACCESS_TOKEN_EXPIRES_IN',
-        '15m',
-      ),
+      expiresIn: accessTokenExpiresIn as JwtExpiresIn,
     });
 
     const refreshToken = await this.jwtService.signAsync(payload, {
@@ -97,10 +100,7 @@ export class AuthService {
         'JWT_REFRESH_SECRET',
         'change-me-refresh-secret',
       ),
-      expiresIn: this.configService.get<string>(
-        'REFRESH_TOKEN_EXPIRES_IN',
-        '7d',
-      ),
+      expiresIn: refreshTokenExpiresIn as JwtExpiresIn,
     });
 
     return { accessToken, refreshToken };

@@ -1,0 +1,13 @@
+{
+  "name": "reservas-experiencia-cliente",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "dev": "concurrently --kill-others-on-fail -n frontend,backend -c cyan,green \"npm run dev:frontend\" \"npm run dev:backend\"",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "dev:backend": "npm --prefix backend run start:dev"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
