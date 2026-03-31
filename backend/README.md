@@ -23,7 +23,7 @@
 
 ## Description
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+Restaurant reservation backend built with NestJS, PostgreSQL and TypeORM.
 
 ## Project setup
 
@@ -96,3 +96,34 @@ Nest is an MIT-licensed open source project. It can grow thanks to the sponsors 
 ## License
 
 Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+
+## Database
+
+The PostgreSQL schema lives in `database/001_initial_schema.sql`.
+
+It creates:
+
+- enums: `role`, `reservation_status`, `waitlist_status`
+- tables: `users`, `customers`, `restaurant_tables`, `shifts`, `reservations`, `waitlist_entries`, `audit_log`
+- views: `daily_shift_occupancy`, `frequent_customers`
+- seed data: 3 shifts, 4 tables, 1 admin user placeholder
+
+Apply and verify it without `psql`:
+
+```bash
+npm run db:apply
+npm run db:verify
+```
+
+Connection defaults:
+
+```bash
+DB_HOST=localhost
+DB_PORT=5432
+DB_USER=postgres
+DB_PASSWORD=34343434
+DB_NAME="Sistema de gestión de reservas y experiencia del cliente"
+```
+
+`npm run db:verify` runs inside a transaction and rolls back at the end.
+It checks enum labels, schema objects, seed rows, the occupancy and frequent-customer views, the unique active reservation rule, table overlap protection, capacity enforcement, and hard-delete blocking.

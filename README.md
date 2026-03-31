@@ -4,7 +4,7 @@ Base inicial de monorepo para el MVP del sistema de reservas de restaurante.
 
 ## Arquitectura base
 
-- `backend/`: API REST con NestJS, MongoDB (Mongoose), JWT/Refresh Token, RBAC, validaciones y seguridad basica.
+- `backend/`: API REST con NestJS, PostgreSQL (TypeORM), JWT/Refresh Token, RBAC, validaciones y seguridad basica.
 - `frontend/`: SPA con React + TypeScript + Vite, preparada para rutas, formularios, validacion, estado global y consumo de API.
 
 ## Estructura
@@ -32,6 +32,8 @@ npm run start:dev
 
 API disponible por defecto en `http://localhost:3000`.
 
+Configura `backend/.env` con `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_SSL` y `DB_SYNCHRONIZE`.
+
 ### Frontend (React + Vite)
 
 ```bash
@@ -47,7 +49,7 @@ Frontend disponible por defecto en `http://localhost:5173`.
 
 - Configuracion y seguridad: `@nestjs/config`, `helmet`, `cookie-parser`, `@nestjs/throttler`
 - Auth y acceso: `@nestjs/jwt`, `@nestjs/passport`, `passport`, `passport-jwt`, `bcrypt`
-- Persistencia y validacion: `@nestjs/mongoose`, `mongoose`, `class-validator`, `class-transformer`
+- Persistencia y validacion: `@nestjs/typeorm`, `typeorm`, `pg`, `class-validator`, `class-transformer`
 - Documentacion: `@nestjs/swagger`
 
 ### Frontend
