@@ -1,13 +1,13 @@
 :root {
   color-scheme: light;
   --bg: #f4f1ea;
-  --surface: rgba(255, 255, 255, 0.7);
+  --surface: rgba(255, 255, 255, 0.74);
   --border: rgba(148, 163, 184, 0.22);
   --border-strong: rgba(15, 23, 42, 0.12);
   --text: #475569;
   --text-strong: #0f172a;
   --muted: #64748b;
-  --focus: rgba(15, 23, 42, 0.25);
+  --focus: rgba(15, 23, 42, 0.24);
   --shadow-soft:
     0 22px 48px rgba(15, 23, 42, 0.08), 0 4px 14px rgba(15, 23, 42, 0.04);
 
@@ -43,7 +43,10 @@ body {
 
 body,
 button,
-a {
+a,
+input,
+textarea,
+select {
   font: inherit;
 }
 

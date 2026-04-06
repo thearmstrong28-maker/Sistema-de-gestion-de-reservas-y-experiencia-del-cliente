@@ -1,10 +1,18 @@
 import { Type } from 'class-transformer';
-import { IsDate, IsInt, Min } from 'class-validator';
+import { IsDate, IsInt, IsOptional, IsUUID, Min } from 'class-validator';
 
 export class CheckAvailabilityDto {
+  @IsUUID()
+  shiftId: string;
+
   @Type(() => Date)
   @IsDate()
-  startAt: Date;
+  startsAt: Date;
+
+  @IsOptional()
+  @Type(() => Date)
+  @IsDate()
+  endsAt?: Date;
 
   @Type(() => Number)
   @IsInt()

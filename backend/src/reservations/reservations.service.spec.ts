@@ -2,22 +2,30 @@ import { BadRequestException, ConflictException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { CustomerEntity } from '../customers/entities/customer.entity';
+import { ShiftEntity } from '../shifts/entities/shift.entity';
 import { ReservationEntity } from './entities/reservation.entity';
-import { TableEntity } from './entities/table.entity';
+import { ReservationStatus } from './enums/reservation-status.enum';
+import { RestaurantTableEntity } from './entities/table.entity';
 import { ReservationsService } from './reservations.service';
 
 describe('ReservationsService', () => {
   let service: ReservationsService;
   let tableRepository: {
     find: jest.Mock;
-    count: jest.Mock;
-    create: jest.Mock;
-    save: jest.Mock;
+    findOne: jest.Mock;
   };
   let reservationRepository: {
-    find: jest.Mock;
+    count: jest.Mock;
     create: jest.Mock;
+    findOne: jest.Mock;
     save: jest.Mock;
+  };
+  let shiftRepository: {
+    findOne: jest.Mock;
+  };
+  let customerRepository: {
+    findOne: jest.Mock;
   };
   let configService: { get: jest.Mock };
 
@@ -29,17 +37,30 @@ describe('ReservationsService', () => {
 
     tableRepository = {
       find: jest.fn(),
-      count: jest.fn().mockResolvedValue(1),
-      create: jest.fn((value: TableEntity | TableEntity[]) => value),
-      save: jest.fn(),
+      findOne: jest.fn(),
     };
 
     reservationRepository = {
-      find: jest.fn(),
+      count: jest.fn().mockResolvedValue(0),
       create: jest.fn(
         (value: ReservationEntity | ReservationEntity[]) => value,
       ),
+      findOne: jest.fn().mockResolvedValue(null),
       save: jest.fn(),
+    };
+
+    shiftRepository = {
+      findOne: jest.fn().mockResolvedValue({
+        id: 'shift-1',
+        shiftDate: '2026-03-26',
+        startsAt: '18:00:00',
+        endsAt: '22:00:00',
+        isActive: true,
+      }),
+    };
+
+    customerRepository = {
+      findOne: jest.fn().mockResolvedValue({ id: 'customer-1' }),
     };
 
     configService = {
@@ -58,12 +79,20 @@ describe('ReservationsService', () => {
       providers: [
         ReservationsService,
         {
-          provide: getRepositoryToken(TableEntity),
+          provide: getRepositoryToken(RestaurantTableEntity),
           useValue: tableRepository,
         },
         {
           provide: getRepositoryToken(ReservationEntity),
           useValue: reservationRepository,
+        },
+        {
+          provide: getRepositoryToken(ShiftEntity),
+          useValue: shiftRepository,
+        },
+        {
+          provide: getRepositoryToken(CustomerEntity),
+          useValue: customerRepository,
         },
         { provide: ConfigService, useValue: configService },
       ],
@@ -80,76 +109,73 @@ describe('ReservationsService', () => {
     const startAt = new Date('2026-05-01T19:00:00.000Z');
 
     await expect(
-      service.reserveTable(
+      service.create(
         {
-          customerName: 'Ana',
+          customerId: 'customer-1',
+          shiftId: 'shift-1',
           partySize: 2,
-          startAt,
+          startsAt: startAt,
         },
         'user-admin-001',
       ),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it('throws a conflict when the only suitable table is occupied', async () => {
+  it('throws conflict when no suitable table is available', async () => {
     tableRepository.find.mockResolvedValue([
       {
         id: 'table-1',
-        number: 1,
-        name: 'Table 1',
+        tableNumber: 1,
         capacity: 2,
         isActive: true,
       },
     ]);
-    reservationRepository.find.mockResolvedValue([
-      {
-        tableId: 'table-1',
-        startAt: new Date('2026-03-26T19:00:00.000Z'),
-        endAt: new Date('2026-03-26T20:30:00.000Z'),
-        status: 'CONFIRMED',
-      },
-    ]);
+    reservationRepository.count.mockResolvedValue(1);
 
     await expect(
-      service.reserveTable(
+      service.create(
         {
-          customerName: 'Ana',
+          customerId: 'customer-1',
+          shiftId: 'shift-1',
           partySize: 2,
-          startAt: new Date('2026-03-26T19:30:00.000Z'),
+          startsAt: new Date('2026-03-26T19:00:00.000Z'),
         },
         'user-admin-001',
       ),
     ).rejects.toBeInstanceOf(ConflictException);
   });
 
-  it('assigns the best-fit table by capacity', async () => {
+  it('assigns best-fit table when no tableId is provided', async () => {
     tableRepository.find.mockResolvedValue([
       {
         id: 'table-2',
-        number: 2,
-        name: 'Table 2',
+        tableNumber: 2,
         capacity: 4,
+        area: 'main',
         isActive: true,
       },
       {
         id: 'table-3',
-        number: 3,
-        name: 'Table 3',
+        tableNumber: 3,
         capacity: 6,
+        area: 'terrace',
         isActive: true,
       },
     ]);
-    reservationRepository.find.mockResolvedValue([]);
-    reservationRepository.save.mockResolvedValue({
-      id: 'reservation-1',
-      tableId: 'table-2',
-    });
+    reservationRepository.count.mockResolvedValue(0);
+    reservationRepository.save.mockImplementation((value: ReservationEntity) =>
+      Promise.resolve({
+        id: 'reservation-1',
+        ...value,
+      }),
+    );
 
-    const reservation = await service.reserveTable(
+    const reservation = await service.create(
       {
-        customerName: 'Ana',
+        customerId: 'customer-1',
+        shiftId: 'shift-1',
         partySize: 3,
-        startAt: new Date('2026-03-26T19:00:00.000Z'),
+        startsAt: new Date('2026-03-26T19:30:00.000Z'),
       },
       'user-admin-001',
     );
@@ -158,12 +184,103 @@ describe('ReservationsService', () => {
       expect.objectContaining({
         tableId: 'table-2',
         partySize: 3,
-        createdBy: 'user-admin-001',
+        createdByUserId: 'user-admin-001',
       }),
     );
-    expect(reservation).toEqual({
-      id: 'reservation-1',
-      tableId: 'table-2',
+    expect(reservation.id).toBe('reservation-1');
+    expect(reservation.tableId).toBe('table-2');
+  });
+
+  it('updates an active reservation and keeps it valid inside shift', async () => {
+    reservationRepository.findOne
+      .mockResolvedValueOnce({
+        id: 'reservation-1',
+        customerId: 'customer-1',
+        shiftId: 'shift-1',
+        reservationDate: '2026-03-26',
+        startsAt: new Date('2026-03-26T19:00:00.000Z'),
+        endsAt: new Date('2026-03-26T20:30:00.000Z'),
+        partySize: 2,
+        tableId: null,
+        status: ReservationStatus.Confirmed,
+        specialRequests: null,
+        notes: null,
+      })
+      .mockResolvedValueOnce(null);
+
+    tableRepository.find.mockResolvedValue([
+      {
+        id: 'table-2',
+        tableNumber: 2,
+        capacity: 4,
+        isActive: true,
+      },
+    ]);
+    reservationRepository.save.mockImplementation((value: ReservationEntity) =>
+      Promise.resolve(value),
+    );
+
+    const updated = await service.update('reservation-1', {
+      partySize: 3,
+      startsAt: new Date('2026-03-26T19:15:00.000Z'),
+      notes: 'updated note',
     });
+
+    expect(updated.partySize).toBe(3);
+    expect(updated.tableId).toBe('table-2');
+    expect(updated.notes).toBe('updated note');
+  });
+
+  it('cancels an active reservation using status update', async () => {
+    reservationRepository.findOne.mockResolvedValue({
+      id: 'reservation-1',
+      status: ReservationStatus.Pending,
+    });
+    reservationRepository.save.mockImplementation((value: ReservationEntity) =>
+      Promise.resolve(value),
+    );
+
+    const cancelled = await service.cancel('reservation-1');
+    expect(cancelled.status).toBe(ReservationStatus.Cancelled);
+  });
+
+  it('marks no-show on an active reservation', async () => {
+    reservationRepository.findOne.mockResolvedValue({
+      id: 'reservation-1',
+      status: ReservationStatus.Confirmed,
+    });
+    reservationRepository.save.mockImplementation((value: ReservationEntity) =>
+      Promise.resolve(value),
+    );
+
+    const noShow = await service.markNoShow('reservation-1');
+    expect(noShow.status).toBe(ReservationStatus.NoShow);
+  });
+
+  it('assigns a table to an existing reservation', async () => {
+    reservationRepository.findOne.mockResolvedValue({
+      id: 'reservation-1',
+      shiftId: 'shift-1',
+      partySize: 4,
+      tableId: null,
+      startsAt: new Date('2026-03-26T19:00:00.000Z'),
+      endsAt: new Date('2026-03-26T20:30:00.000Z'),
+      status: ReservationStatus.Pending,
+    });
+    tableRepository.findOne.mockResolvedValue({
+      id: 'table-3',
+      tableNumber: 3,
+      capacity: 4,
+      isActive: true,
+    });
+    reservationRepository.save.mockImplementation((value: ReservationEntity) =>
+      Promise.resolve(value),
+    );
+
+    const assigned = await service.assignTable('reservation-1', {
+      tableId: 'table-3',
+    });
+
+    expect(assigned.tableId).toBe('table-3');
   });
 });

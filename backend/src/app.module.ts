@@ -4,7 +4,10 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
+import { CustomersModule } from './customers/customers.module';
+import { ReportsModule } from './reports/reports.module';
 import { ReservationsModule } from './reservations/reservations.module';
+import { WaitlistModule } from './waitlist/waitlist.module';
 
 @Module({
   imports: [
@@ -31,6 +34,9 @@ import { ReservationsModule } from './reservations/reservations.module';
     }),
     AuthModule,
     ReservationsModule,
+    CustomersModule,
+    WaitlistModule,
+    ReportsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

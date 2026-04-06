@@ -1,8 +1,8 @@
 export enum Role {
-  Admin = 'Admin',
-  Host = 'Host',
-  Manager = 'Manager',
-  Customer = 'Customer',
+  Admin = 'admin',
+  Host = 'host',
+  Manager = 'manager',
+  Customer = 'customer',
 }
 
 export const ALL_ROLES: Role[] = [

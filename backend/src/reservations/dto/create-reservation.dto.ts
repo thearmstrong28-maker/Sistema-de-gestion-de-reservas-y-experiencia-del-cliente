@@ -1,24 +1,19 @@
 import { Type } from 'class-transformer';
 import {
   IsDate,
-  IsInt,
-  IsNotEmpty,
   IsOptional,
+  IsInt,
   IsString,
-  MaxLength,
+  IsUUID,
   Min,
 } from 'class-validator';
 
 export class CreateReservationDto {
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(120)
-  customerName: string;
+  @IsUUID()
+  customerId: string;
 
-  @IsOptional()
-  @IsString()
-  @MaxLength(120)
-  customerRef?: string;
+  @IsUUID()
+  shiftId: string;
 
   @Type(() => Number)
   @IsInt()
@@ -27,5 +22,22 @@ export class CreateReservationDto {
 
   @Type(() => Date)
   @IsDate()
-  startAt: Date;
+  startsAt: Date;
+
+  @IsOptional()
+  @Type(() => Date)
+  @IsDate()
+  endsAt?: Date;
+
+  @IsOptional()
+  @IsUUID()
+  tableId?: string;
+
+  @IsOptional()
+  @IsString()
+  specialRequests?: string;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
 }

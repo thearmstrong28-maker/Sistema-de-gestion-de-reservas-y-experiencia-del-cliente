@@ -10,6 +10,7 @@ import {
 import type { Request, Response } from 'express';
 import { Roles } from './decorators/roles.decorator';
 import { LoginDto } from './dto/login.dto';
+import { RegisterDto } from './dto/register.dto';
 import { ALL_ROLES } from './enums/role.enum';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
@@ -19,6 +20,11 @@ import { AuthService } from './auth.service';
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
+
+  @Post('register')
+  register(@Body() registerDto: RegisterDto) {
+    return this.authService.register(registerDto);
+  }
 
   @Post('login')
   async login(
@@ -42,6 +48,11 @@ export class AuthController {
   async refresh(@Req() request: Request): Promise<{ accessToken: string }> {
     const refreshToken = request.cookies?.refreshToken as string | undefined;
     return this.authService.refresh(refreshToken);
+  }
+
+  @Get('user-classes')
+  getUserClasses() {
+    return this.authService.getUserClasses();
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)

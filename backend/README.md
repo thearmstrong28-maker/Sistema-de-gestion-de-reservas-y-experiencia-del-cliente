@@ -1,121 +1,29 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Backend API - Restaurant Reservations
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+Backend NestJS + PostgreSQL + TypeORM para gestionar reservas, clientes, lista de espera y reportes operativos.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
-
-## Description
-
-Restaurant reservation backend built with NestJS, PostgreSQL and TypeORM.
-
-## Project setup
+## Setup
 
 ```bash
-$ npm install
+npm install
 ```
 
-## Compile and run the project
+## Base de datos
 
-```bash
-# development
-$ npm run start
+El esquema SQL versionado vive en `backend/database`:
 
-# watch mode
-$ npm run start:dev
+- `001_initial_schema.sql`
+- `002_reservations_created_by.sql`
+- `003_user_classes.sql`
 
-# production mode
-$ npm run start:prod
-```
-
-## Run tests
-
-```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
-```
-
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
-```
-
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
-
-## Database
-
-The PostgreSQL schema lives in `database/001_initial_schema.sql`.
-
-It creates:
-
-- enums: `role`, `reservation_status`, `waitlist_status`
-- tables: `users`, `customers`, `restaurant_tables`, `shifts`, `reservations`, `waitlist_entries`, `audit_log`
-- views: `daily_shift_occupancy`, `frequent_customers`
-- seed data: 3 shifts, 4 tables, 1 admin user placeholder
-
-Apply and verify it without `psql`:
+Aplicar y verificar:
 
 ```bash
 npm run db:apply
 npm run db:verify
 ```
 
-Connection defaults:
+Variables por defecto:
 
 ```bash
 DB_HOST=localhost
@@ -125,5 +33,119 @@ DB_PASSWORD=34343434
 DB_NAME="Sistema de gestión de reservas y experiencia del cliente"
 ```
 
-`npm run db:verify` runs inside a transaction and rolls back at the end.
-It checks enum labels, schema objects, seed rows, the occupancy and frequent-customer views, the unique active reservation rule, table overlap protection, capacity enforcement, and hard-delete blocking.
+## Autenticacion y RBAC
+
+- JWT obligatorio para endpoints funcionales.
+- `admin` / `host`: reservas, clientes, lista de espera.
+- `manager`: lectura de disponibilidad y reportes.
+- `admin` + `manager`: reportes.
+
+## Endpoints por requerimiento funcional
+
+### RF-01 Registrar reserva
+
+- `POST /reservations`
+
+### RF-02 Modificar reserva
+
+- `PATCH /reservations/:id`
+
+### RF-03 Cancelar reserva
+
+- `PATCH /reservations/:id/cancel`
+
+### RF-04 Marcar no-show
+
+- `PATCH /reservations/:id/no-show`
+
+### RF-05 Registrar clientes con preferencias
+
+- `POST /customers`
+- `PATCH /customers/:id`
+
+### RF-06 Historial de visitas del cliente
+
+- `GET /customers/:id/visit-history`
+- `GET /customers?q=...` (listado/busqueda basica)
+
+### RF-07 Asignar mesas por capacidad/turno/disponibilidad
+
+- `PATCH /reservations/:id/assign-table`
+- `GET /reservations/availability`
+
+### RF-08 Reporte de ocupacion diaria
+
+- `GET /reports/daily-occupancy`
+
+### RF-09 Reporte de clientes frecuentes
+
+- `GET /reports/frequent-customers`
+
+### RF-10 Lista de espera ordenada
+
+- `POST /waitlist`
+- `GET /waitlist?date=YYYY-MM-DD&shiftId=<uuid>`
+- `PATCH /waitlist/:id`
+
+## Ejemplos curl
+
+```bash
+# Login
+curl -X POST http://localhost:3000/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"admin@local.test","password":"<password>"}'
+
+# RF-01 crear reserva
+curl -X POST http://localhost:3000/reservations \
+  -H "Authorization: Bearer <token>" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "customerId":"<customer-uuid>",
+    "shiftId":"<shift-uuid>",
+    "partySize":4,
+    "startsAt":"2026-04-08T19:00:00.000Z"
+  }'
+
+# RF-07 disponibilidad
+curl "http://localhost:3000/reservations/availability?shiftId=<shift-uuid>&startsAt=2026-04-08T19:00:00.000Z&partySize=4" \
+  -H "Authorization: Bearer <token>"
+
+# RF-05 crear cliente
+curl -X POST http://localhost:3000/customers \
+  -H "Authorization: Bearer <token>" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "fullName":"Ana Ruiz",
+    "email":"ana@example.com",
+    "phone":"+5491111111111",
+    "preferences":{"allergies":["nuts"],"table":"window"}
+  }'
+
+# RF-10 crear entrada de waitlist
+curl -X POST http://localhost:3000/waitlist \
+  -H "Authorization: Bearer <token>" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "customerId":"<customer-uuid>",
+    "requestedShiftId":"<shift-uuid>",
+    "requestedDate":"2026-04-08",
+    "partySize":2
+  }'
+
+# RF-08 reporte ocupacion diaria
+curl "http://localhost:3000/reports/daily-occupancy?date=2026-04-08" \
+  -H "Authorization: Bearer <manager-or-admin-token>"
+
+# RF-09 reporte clientes frecuentes
+curl "http://localhost:3000/reports/frequent-customers?minVisits=2&limit=20" \
+  -H "Authorization: Bearer <manager-or-admin-token>"
+```
+
+## Validacion recomendada
+
+```bash
+npm run db:apply
+npm run db:verify
+npm run lint
+npm run test -- --runInBand
+```

@@ -7,9 +7,21 @@ const DB_PORT = Number(process.env.DB_PORT || 5432);
 const DB_USER = process.env.DB_USER || 'postgres';
 const DB_PASSWORD = process.env.DB_PASSWORD || '34343434';
 const DB_NAME = process.env.DB_NAME || 'Sistema de gestión de reservas y experiencia del cliente';
-const SQL_FILE = process.argv[2]
-  ? path.resolve(process.argv[2])
-  : path.resolve(__dirname, '../database/001_initial_schema.sql');
+const DATABASE_DIR = path.resolve(__dirname, '../database');
+const SQL_FILES = process.argv[2]
+  ? [path.resolve(process.argv[2])]
+  : fs
+      .readdirSync(DATABASE_DIR)
+      .filter((file) => /^\d+_.+\.sql$/u.test(file))
+      .sort((left, right) => {
+        const leftPrefix = Number(left.match(/^\d+/u)?.[0] ?? Number.POSITIVE_INFINITY);
+        const rightPrefix = Number(right.match(/^\d+/u)?.[0] ?? Number.POSITIVE_INFINITY);
+
+        return leftPrefix === rightPrefix
+          ? left.localeCompare(right, 'en')
+          : leftPrefix - rightPrefix;
+      })
+      .map((file) => path.join(DATABASE_DIR, file));
 
 function quoteIdent(value) {
   return `"${String(value).replace(/"/g, '""')}"`;
@@ -38,7 +50,6 @@ async function ensureDatabaseExists() {
 }
 
 async function applySchema() {
-  const sql = fs.readFileSync(SQL_FILE, 'utf8');
   const client = new Client({
     host: DB_HOST,
     port: DB_PORT,
@@ -48,16 +59,19 @@ async function applySchema() {
   });
 
   await client.connect();
-  let committed = false;
   try {
-    await client.query('BEGIN');
-    await client.query(sql);
-    await client.query('COMMIT');
-    committed = true;
-  } finally {
-    if (!committed) {
-      await client.query('ROLLBACK').catch(() => {});
+    for (const sqlFile of SQL_FILES) {
+      const sql = fs.readFileSync(sqlFile, 'utf8');
+      await client.query('BEGIN');
+      try {
+        await client.query(sql);
+        await client.query('COMMIT');
+      } catch (error) {
+        await client.query('ROLLBACK').catch(() => {});
+        throw error;
+      }
     }
+  } finally {
     await client.end();
   }
 }
@@ -65,7 +79,7 @@ async function applySchema() {
 async function main() {
   await ensureDatabaseExists();
   await applySchema();
-  process.stdout.write(`Applied schema from ${SQL_FILE} to ${DB_NAME}\n`);
+  process.stdout.write(`Applied schema from ${SQL_FILES.join(', ')} to ${DB_NAME}\n`);
 }
 
 main().catch((error) => {

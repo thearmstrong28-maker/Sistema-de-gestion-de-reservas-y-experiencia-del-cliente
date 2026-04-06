@@ -23,6 +23,7 @@ const REQUIRED_OBJECTS = [
   'public.reservations',
   'public.waitlist_entries',
   'public.audit_log',
+  'public.user_classes',
   'public.daily_shift_occupancy',
   'public.frequent_customers',
   'public.ux_reservations_active_customer_shift',
@@ -30,6 +31,8 @@ const REQUIRED_OBJECTS = [
   'public.ix_reservations_table_status',
   'public.ix_reservations_customer_status',
   'public.ix_tables_capacity_active',
+  'public.ix_user_classes_role',
+  'public.ix_user_classes_is_active',
 ];
 
 function makeClient() {
@@ -111,7 +114,8 @@ async function main() {
         SELECT
           (SELECT COUNT(*) FROM users WHERE email = 'admin@local.test') AS admin_users,
           (SELECT COUNT(*) FROM shifts) AS shifts_count,
-          (SELECT COUNT(*) FROM restaurant_tables) AS tables_count
+          (SELECT COUNT(*) FROM restaurant_tables) AS tables_count,
+          (SELECT COUNT(*) FROM user_classes) AS user_classes_count
       `,
     );
     if (asNumber(seedRow.admin_users) !== 1) {
@@ -123,7 +127,42 @@ async function main() {
     if (asNumber(seedRow.tables_count) < 4) {
       throw new Error('expected at least 4 seeded tables');
     }
-    results.push({ name: 'seed data present', ok: true, detail: 'admin user, shifts, and tables found' });
+    if (asNumber(seedRow.user_classes_count) !== 4) {
+      throw new Error('expected exactly 4 seeded user classes');
+    }
+    results.push({ name: 'seed data present', ok: true, detail: 'admin user, shifts, tables, and user classes found' });
+
+    const userClassesRow = await queryOne(
+      client,
+      `
+        SELECT json_agg(u ORDER BY u.access_level, u.display_name) AS rows
+        FROM user_classes u
+      `,
+    );
+    const userClasses = userClassesRow.rows ?? [];
+    const expectedUserClasses = [
+      { code: 'ADMIN', display_name: 'Administrador', description: 'Administrador', access_level: 'ALTO', role: 'admin', is_active: true },
+      { code: 'HOST', display_name: 'Host', description: 'Recepcionista', access_level: 'MEDIO', role: 'host', is_active: true },
+      { code: 'MANAGER', display_name: 'Gerente', description: 'Gerente', access_level: 'MEDIO', role: 'manager', is_active: true },
+      { code: 'CUSTOMER_GUEST', display_name: 'Cliente', description: 'Invitado', access_level: 'BAJO', role: 'customer', is_active: true },
+    ];
+    const mappingMatches =
+      userClasses.length === expectedUserClasses.length &&
+      expectedUserClasses.every((expected) =>
+        userClasses.some(
+          (row) =>
+            row.code === expected.code &&
+            row.display_name === expected.display_name &&
+            row.description === expected.description &&
+            row.access_level === expected.access_level &&
+            row.role === expected.role &&
+            row.is_active === expected.is_active,
+        ),
+      );
+    if (!mappingMatches) {
+      throw new Error(`user_classes seed mapping mismatch: ${JSON.stringify(userClasses)}`);
+    }
+    results.push({ name: 'user_classes seed mapping', ok: true, detail: '4 classes with expected role/access_level pairs' });
 
     const shiftRow = await queryOne(client, `SELECT id, shift_date FROM shifts WHERE shift_name = 'lunch'`);
     const breakfastShiftRow = await queryOne(client, `SELECT id FROM shifts WHERE shift_name = 'breakfast'`);

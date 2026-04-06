@@ -3,31 +3,38 @@ import {
   CreateDateColumn,
   Entity,
   Index,
+  OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { ReservationEntity } from './reservation.entity';
 
-@Entity({ name: 'tables' })
-@Index(['number'], { unique: true })
-export class TableEntity {
+@Entity({ name: 'restaurant_tables' })
+@Index(['tableNumber'], { unique: true })
+export class RestaurantTableEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'int' })
-  number: number;
+  @Column({ name: 'table_number', type: 'int' })
+  tableNumber: number;
 
-  @Column({ type: 'varchar', length: 120 })
-  name: string;
+  @Column({ type: 'text', nullable: true })
+  area?: string | null;
 
   @Column({ type: 'int' })
   capacity: number;
 
-  @Column({ type: 'boolean', default: true })
+  @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive: boolean;
 
-  @CreateDateColumn({ type: 'timestamptz' })
+  @OneToMany(() => ReservationEntity, (reservation) => reservation.table)
+  reservations?: ReservationEntity[];
+
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 
-  @UpdateDateColumn({ type: 'timestamptz' })
+  @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
   updatedAt: Date;
 }
+
+export { RestaurantTableEntity as TableEntity };
