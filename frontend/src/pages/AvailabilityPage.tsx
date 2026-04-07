@@ -7,6 +7,7 @@ import type {
 } from '../api/types'
 import { StatusMessage } from '../components/StatusMessage'
 import { formatDateTime, stringifyJson, toIsoFromDatetimeLocal } from '../lib/format'
+import { formatReservationStatus } from '../lib/labels'
 
 type Status = 'idle' | 'loading' | 'success' | 'error'
 
@@ -22,6 +23,20 @@ const emptyForm = {
   endsAt: '',
   partySize: '2',
 }
+
+const buildAvailabilityPreview = (availability: AvailabilityResponse) => ({
+  turno: availability.shiftId,
+  inicio: formatDateTime(availability.startsAt),
+  fin: formatDateTime(availability.endsAt),
+  cantidadDeComensales: availability.partySize,
+  disponible: availability.available ? 'Sí' : 'No',
+  mesaSugerida: availability.recommendedTableId ?? '—',
+  mesasDisponibles: availability.availableTables.map((table) => ({
+    mesa: table.tableNumber,
+    capacidad: table.capacity,
+    area: table.area ?? 'Sin área',
+  })),
+})
 
 export function AvailabilityPage() {
   const [availabilityForm, setAvailabilityForm] = useState(emptyForm)
@@ -55,7 +70,7 @@ export function AvailabilityPage() {
       const { data } = await api.get<AvailabilityResponse>('/reservations/availability', {
         params: payload,
       })
-      setAvailabilityState({ status: 'success', message: 'Disponibilidad lista.', data })
+      setAvailabilityState({ status: 'success', message: 'Disponibilidad consultada.', data })
     } catch (error) {
       setAvailabilityState({ status: 'error', message: getApiErrorMessage(error), data: null })
     }
@@ -80,17 +95,17 @@ export function AvailabilityPage() {
     <section className="page-stack">
       <div className="page-header">
         <div>
-          <p className="eyebrow">RF-07</p>
-          <h2>Mesas / Disponibilidad</h2>
+          <p className="eyebrow">Consulta y asignación de mesas</p>
+          <h2>Mesas y disponibilidad</h2>
         </div>
-        <p className="muted">Consulta de disponibilidad y asignación de mesa sobre reserva.</p>
+        <p className="muted">Consulta de disponibilidad y asignación de mesa sobre una reserva.</p>
       </div>
 
       <div className="two-column-grid">
         <form className="panel form-panel" onSubmit={checkAvailability}>
           <h3>Consultar disponibilidad</h3>
           <label>
-            Shift ID
+            ID del turno
             <input
               value={availabilityForm.shiftId}
               onChange={(event) =>
@@ -101,7 +116,7 @@ export function AvailabilityPage() {
           </label>
           <div className="form-grid">
             <label>
-              Inicio
+              Inicio de la consulta
               <input
                 type="datetime-local"
                 value={availabilityForm.startsAt}
@@ -112,7 +127,7 @@ export function AvailabilityPage() {
               />
             </label>
             <label>
-              Fin
+              Fin de la consulta
               <input
                 type="datetime-local"
                 value={availabilityForm.endsAt}
@@ -123,7 +138,7 @@ export function AvailabilityPage() {
             </label>
           </div>
           <label>
-            Comensales
+            Cantidad de comensales
             <input
               type="number"
               min={1}
@@ -136,7 +151,7 @@ export function AvailabilityPage() {
           </label>
 
           <button type="submit" className="button button-primary">
-            Verificar
+            Consultar disponibilidad
           </button>
           <StatusMessage
             status={availabilityState.status}
@@ -148,7 +163,7 @@ export function AvailabilityPage() {
           <form className="panel form-panel" onSubmit={assignTable}>
             <h3>Asignar mesa</h3>
             <label>
-              Reserva ID
+              ID de la reserva
               <input
                 value={reservationId}
                 onChange={(event) => setReservationId(event.target.value)}
@@ -156,21 +171,21 @@ export function AvailabilityPage() {
               />
             </label>
             <label>
-              Mesa ID (opcional)
+              ID de la mesa (opcional)
               <input value={tableId} onChange={(event) => setTableId(event.target.value)} />
             </label>
 
             <button type="submit" className="button button-secondary">
-              Asignar
+              Asignar mesa
             </button>
             <StatusMessage status={assignState.status} message={assignState.message} />
           </form>
 
-          <article className="panel result-panel">
-            <div className="panel-heading">
-              <h3>Resultado</h3>
-              <span className="chip">
-                {availabilityState.data
+            <article className="panel result-panel">
+              <div className="panel-heading">
+                <h3>Resultado</h3>
+                <span className="chip">
+                  {availabilityState.data
                   ? availabilityState.data.available
                     ? 'Disponible'
                     : 'No disponible'
@@ -180,7 +195,7 @@ export function AvailabilityPage() {
 
             <pre className="json-block">
               {availabilityState.data
-                ? stringifyJson(availabilityState.data)
+                ? stringifyJson(buildAvailabilityPreview(availabilityState.data))
                 : 'Esperando consulta.'}
             </pre>
 
@@ -206,11 +221,19 @@ export function AvailabilityPage() {
 
       <article className="panel result-panel">
         <div className="panel-heading">
-          <h3>Última mesa asignada</h3>
-          <span className="chip">REST</span>
+          <h3>Última asignación</h3>
+          <span className="chip">Datos</span>
         </div>
         <pre className="json-block">
-          {assignState.data ? stringifyJson(assignState.data) : 'Sin acciones todavía.'}
+          {assignState.data ? stringifyJson({
+            id: assignState.data.id,
+            cliente: assignState.data.customerId,
+            mesa: assignState.data.tableId ?? '—',
+            turno: assignState.data.shiftId,
+            estado: formatReservationStatus(assignState.data.status),
+            inicio: formatDateTime(assignState.data.startsAt),
+            fin: formatDateTime(assignState.data.endsAt),
+          }) : 'Sin acciones todavía.'}
         </pre>
       </article>
     </section>

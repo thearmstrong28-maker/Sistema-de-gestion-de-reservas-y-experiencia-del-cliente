@@ -1,25 +1,29 @@
-import { Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes } from 'react-router-dom'
 import './App.css'
 import { AppLayout } from './components/AppLayout'
+import { RequireAdmin } from './components/RequireAdmin'
+import { SessionBootstrap } from './components/SessionBootstrap'
+import { AdminPage } from './pages/AdminPage'
 import { HomePage } from './pages/HomePage'
-import { ReservationsPage } from './pages/ReservationsPage'
-import { CustomersPage } from './pages/CustomersPage'
-import { AvailabilityPage } from './pages/AvailabilityPage'
-import { WaitlistPage } from './pages/WaitlistPage'
-import { ReportsPage } from './pages/ReportsPage'
+import { LoginPage } from './pages/LoginPage'
+import { RegisterPage } from './pages/RegisterPage'
 
 function App() {
   return (
-    <Routes>
-      <Route element={<AppLayout />}>
-        <Route index element={<HomePage />} />
-        <Route path="reservas" element={<ReservationsPage />} />
-        <Route path="clientes" element={<CustomersPage />} />
-        <Route path="mesas" element={<AvailabilityPage />} />
-        <Route path="waitlist" element={<WaitlistPage />} />
-        <Route path="reportes" element={<ReportsPage />} />
-      </Route>
-    </Routes>
+    <>
+      <SessionBootstrap />
+      <Routes>
+        <Route element={<AppLayout />}>
+          <Route index element={<HomePage />} />
+          <Route path="login" element={<LoginPage />} />
+          <Route path="registro" element={<RegisterPage />} />
+          <Route element={<RequireAdmin />}>
+            <Route path="admin" element={<AdminPage />} />
+          </Route>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Route>
+      </Routes>
+    </>
   )
 }
 

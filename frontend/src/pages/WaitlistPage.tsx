@@ -3,6 +3,7 @@ import { api, getApiErrorMessage } from '../api/http'
 import type { CreateWaitlistEntryRequest, UpdateWaitlistEntryRequest, WaitlistEntry } from '../api/types'
 import { StatusMessage } from '../components/StatusMessage'
 import { formatDate, stringifyJson } from '../lib/format'
+import { formatWaitlistStatus } from '../lib/labels'
 
 type Status = 'idle' | 'loading' | 'success' | 'error'
 
@@ -27,6 +28,17 @@ const emptyUpdate = {
   position: '',
   notes: '',
 }
+
+const buildWaitlistPreview = (entry: WaitlistEntry) => ({
+  id: entry.id,
+  cliente: entry.customerId,
+  turnoSolicitado: entry.requestedShiftId ?? '—',
+  fechaSolicitada: entry.requestedDate,
+  comensales: entry.partySize,
+  estado: formatWaitlistStatus(entry.status),
+  posicion: entry.position ?? '—',
+  notas: entry.notes ?? '—',
+})
 
 export function WaitlistPage() {
   const [createForm, setCreateForm] = useState(emptyCreate)
@@ -54,7 +66,7 @@ export function WaitlistPage() {
 
   const createEntry = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    setCreateState({ status: 'loading', message: 'Creando entrada...', data: null })
+    setCreateState({ status: 'loading', message: 'Creando entrada de espera...', data: null })
 
     try {
       const payload: CreateWaitlistEntryRequest = {
@@ -76,7 +88,7 @@ export function WaitlistPage() {
 
   const listEntries = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    setListState({ status: 'loading', message: 'Cargando waitlist...', data: null })
+    setListState({ status: 'loading', message: 'Cargando lista de espera...', data: null })
 
     try {
       const { data } = await api.get<WaitlistEntry[]>('/waitlist', {
@@ -86,7 +98,7 @@ export function WaitlistPage() {
         },
       })
       setLastResponse(data)
-      setListState({ status: 'success', message: 'Waitlist actualizada.', data })
+      setListState({ status: 'success', message: 'Lista de espera actualizada.', data })
     } catch (error) {
       setListState({ status: 'error', message: getApiErrorMessage(error), data: null })
     }
@@ -94,7 +106,7 @@ export function WaitlistPage() {
 
   const updateEntry = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    setUpdateState({ status: 'loading', message: 'Actualizando entrada...', data: null })
+    setUpdateState({ status: 'loading', message: 'Actualizando entrada de espera...', data: null })
 
     try {
       const payload: UpdateWaitlistEntryRequest = {
@@ -118,17 +130,17 @@ export function WaitlistPage() {
     <section className="page-stack">
       <div className="page-header">
         <div>
-          <p className="eyebrow">RF-10</p>
+          <p className="eyebrow">Gestión de lista de espera</p>
           <h2>Lista de espera</h2>
         </div>
-        <p className="muted">Alta, listado y edición simple de entradas de espera.</p>
+        <p className="muted">Alta, consulta y edición simple de entradas de espera.</p>
       </div>
 
       <div className="two-column-grid">
         <form className="panel form-panel" onSubmit={createEntry}>
           <h3>Nueva entrada</h3>
           <label>
-            Customer ID
+            ID del cliente
             <input
               value={createForm.customerId}
               onChange={(event) =>
@@ -138,7 +150,7 @@ export function WaitlistPage() {
             />
           </label>
           <label>
-            Shift ID (opcional)
+            ID del turno (opcional)
             <input
               value={createForm.requestedShiftId}
               onChange={(event) =>
@@ -159,7 +171,7 @@ export function WaitlistPage() {
               />
             </label>
             <label>
-              Comensales
+              Cantidad de comensales
               <input
                 type="number"
                 min={1}
@@ -172,7 +184,7 @@ export function WaitlistPage() {
             </label>
           </div>
           <label>
-            Posición (opcional)
+            Posición sugerida (opcional)
             <input
               type="number"
               min={1}
@@ -201,7 +213,7 @@ export function WaitlistPage() {
 
         <div className="stacked-panels">
           <form className="panel form-panel" onSubmit={listEntries}>
-            <h3>Listar waitlist</h3>
+            <h3>Consultar lista de espera</h3>
             <div className="form-grid">
               <label>
                 Fecha
@@ -214,7 +226,7 @@ export function WaitlistPage() {
                 />
               </label>
               <label>
-                Shift ID
+                ID del turno
                 <input
                   value={listForm.shiftId}
                   onChange={(event) =>
@@ -230,14 +242,14 @@ export function WaitlistPage() {
 
             <div className="history-list">
               {listState.data?.length ? (
-                listState.data.map((entry) => (
+                  listState.data.map((entry) => (
                   <button
                     key={entry.id}
                     type="button"
                     className="list-row"
                     onClick={() => setUpdateForm({ ...updateForm, entryId: entry.id })}
                   >
-                    <strong>{entry.status}</strong>
+                    <strong>{formatWaitlistStatus(entry.status)}</strong>
                     <span>
                       Posición {entry.position ?? '—'} · {formatDate(entry.requestedDate)}
                     </span>
@@ -252,7 +264,7 @@ export function WaitlistPage() {
           <form className="panel form-panel" onSubmit={updateEntry}>
             <h3>Actualizar entrada</h3>
             <label>
-              Entry ID
+              ID de la entrada
               <input
                 value={updateForm.entryId}
                 onChange={(event) =>
@@ -270,11 +282,11 @@ export function WaitlistPage() {
                 }
               >
                 <option value="">Sin cambio</option>
-                <option value="waiting">waiting</option>
-                <option value="notified">notified</option>
-                <option value="accepted">accepted</option>
-                <option value="expired">expired</option>
-                <option value="cancelled">cancelled</option>
+                <option value="waiting">En espera</option>
+                <option value="notified">Notificada</option>
+                <option value="accepted">Aceptada</option>
+                <option value="expired">Vencida</option>
+                <option value="cancelled">Cancelada</option>
               </select>
             </label>
             <label>
@@ -309,15 +321,18 @@ export function WaitlistPage() {
 
       <article className="panel result-panel">
         <div className="panel-heading">
-          <h3>Última respuesta</h3>
-          <span className="chip">REST</span>
+          <h3>Última acción</h3>
+          <span className="chip">Datos</span>
         </div>
         <pre className="json-block">
           {lastResponse
             ? stringifyJson(
                 Array.isArray(lastResponse)
-                  ? { total: lastResponse.length, items: lastResponse }
-                  : lastResponse,
+                  ? {
+                      total: lastResponse.length,
+                      entradas: lastResponse.map((entry) => buildWaitlistPreview(entry)),
+                    }
+                  : buildWaitlistPreview(lastResponse),
               )
             : 'Sin datos todavía.'}
         </pre>

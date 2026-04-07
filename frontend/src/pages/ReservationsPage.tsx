@@ -8,6 +8,7 @@ import type {
 } from '../api/types'
 import { StatusMessage } from '../components/StatusMessage'
 import { formatDateTime, stringifyJson, toIsoFromDatetimeLocal } from '../lib/format'
+import { formatReservationStatus } from '../lib/labels'
 import { omitEmptyString } from '../lib/forms'
 
 type Status = 'idle' | 'loading' | 'success' | 'error'
@@ -40,6 +41,20 @@ const emptyPatchState = {
   specialRequests: '',
   notes: '',
 }
+
+const buildReservationPreview = (reservation: Reservation) => ({
+  id: reservation.id,
+  cliente: reservation.customerId,
+  mesa: reservation.tableId ?? '—',
+  turno: reservation.shiftId,
+  fechaReserva: reservation.reservationDate,
+  inicio: formatDateTime(reservation.startsAt),
+  fin: formatDateTime(reservation.endsAt),
+  comensales: reservation.partySize,
+  estado: formatReservationStatus(reservation.status),
+  solicitudesEspeciales: reservation.specialRequests ?? '—',
+  notas: reservation.notes ?? '—',
+})
 
 export function ReservationsPage() {
   const [createForm, setCreateForm] = useState(emptyReservationState)
@@ -126,7 +141,7 @@ export function ReservationsPage() {
       setLastReservation(data)
       setActionState({
         status: 'success',
-        message: path === 'cancel' ? 'Reserva cancelada.' : 'No-show registrado.',
+        message: path === 'cancel' ? 'Reserva cancelada.' : 'Ausencia registrada.',
         data: null,
       })
     } catch (error) {
@@ -158,11 +173,11 @@ export function ReservationsPage() {
     <section className="page-stack">
       <div className="page-header">
         <div>
-          <p className="eyebrow">RF-01 · RF-02 · RF-03 · RF-04</p>
+          <p className="eyebrow">Creación, edición, cancelación y asignación</p>
           <h2>Reservas</h2>
         </div>
         <p className="muted">
-          Alta, edición y cambios de estado sobre la misma vista.
+          Alta, edición y cambios de estado desde una misma vista.
         </p>
       </div>
 
@@ -170,7 +185,7 @@ export function ReservationsPage() {
         <form className="panel form-panel" onSubmit={createReservation}>
           <h3>Registrar reserva</h3>
           <label>
-            Customer ID
+            ID del cliente
             <input
               value={createForm.customerId}
               onChange={(event) =>
@@ -180,7 +195,7 @@ export function ReservationsPage() {
             />
           </label>
           <label>
-            Shift ID
+            ID del turno
             <input
               value={createForm.shiftId}
               onChange={(event) =>
@@ -191,7 +206,7 @@ export function ReservationsPage() {
           </label>
           <div className="form-grid">
             <label>
-              Comensales
+              Cantidad de comensales
               <input
                 type="number"
                 min={1}
@@ -203,7 +218,7 @@ export function ReservationsPage() {
               />
             </label>
             <label>
-              Inicio
+              Inicio de la reserva
               <input
                 type="datetime-local"
                 value={createForm.startsAt}
@@ -215,7 +230,7 @@ export function ReservationsPage() {
             </label>
           </div>
           <label>
-            Fin (opcional)
+            Fin de la reserva (opcional)
             <input
               type="datetime-local"
               value={createForm.endsAt}
@@ -234,7 +249,7 @@ export function ReservationsPage() {
             />
           </label>
           <label>
-            Requerimientos especiales
+            Solicitudes especiales
             <textarea
               rows={3}
               value={createForm.specialRequests}
@@ -267,7 +282,7 @@ export function ReservationsPage() {
           <form className="panel form-panel" onSubmit={updateReservation}>
             <h3>Modificar reserva</h3>
             <label>
-              Reserva ID
+              ID de la reserva
               <input
                 value={editForm.reservationId}
                 onChange={(event) =>
@@ -278,7 +293,7 @@ export function ReservationsPage() {
             </label>
             <div className="form-grid">
               <label>
-                Customer ID
+                ID del cliente
                 <input
                   value={editForm.customerId}
                   onChange={(event) =>
@@ -287,7 +302,7 @@ export function ReservationsPage() {
                 />
               </label>
               <label>
-                Shift ID
+                ID del turno
                 <input
                   value={editForm.shiftId}
                   onChange={(event) =>
@@ -298,7 +313,7 @@ export function ReservationsPage() {
             </div>
             <div className="form-grid">
               <label>
-                Comensales
+                Cantidad de comensales
                 <input
                   type="number"
                   min={1}
@@ -309,7 +324,7 @@ export function ReservationsPage() {
                 />
               </label>
               <label>
-                Inicio
+                Inicio de la reserva
                 <input
                   type="datetime-local"
                   value={editForm.startsAt}
@@ -320,7 +335,7 @@ export function ReservationsPage() {
               </label>
             </div>
             <label>
-              Fin
+              Fin de la reserva
               <input
                 type="datetime-local"
                 value={editForm.endsAt}
@@ -339,7 +354,7 @@ export function ReservationsPage() {
               />
             </label>
             <label>
-              Requerimientos especiales
+              Solicitudes especiales
               <textarea
                 rows={2}
                 value={editForm.specialRequests}
@@ -369,9 +384,9 @@ export function ReservationsPage() {
           </form>
 
           <div className="panel form-panel">
-            <h3>Cancelar, no-show y asignar mesa</h3>
+            <h3>Cancelar, registrar ausencia y asignar mesa</h3>
             <label>
-              Reserva ID
+              ID de la reserva
               <input
                 value={assignForm.reservationId}
                 onChange={(event) =>
@@ -381,7 +396,7 @@ export function ReservationsPage() {
               />
             </label>
             <label>
-              Mesa ID
+              ID de la mesa
               <input
                 value={assignForm.tableId}
                 onChange={(event) =>
@@ -396,14 +411,14 @@ export function ReservationsPage() {
                 className="button button-secondary"
                 onClick={() => patchReservation('cancel', 'Cancelando reserva')}
               >
-                Cancelar
+                Cancelar reserva
               </button>
               <button
                 type="button"
                 className="button button-secondary"
-                onClick={() => patchReservation('no-show', 'Marcando no-show')}
+                onClick={() => patchReservation('no-show', 'Marcando ausencia')}
               >
-                No-show
+                Registrar ausencia
               </button>
             </div>
 
@@ -420,14 +435,16 @@ export function ReservationsPage() {
 
       <article className="panel result-panel">
         <div className="panel-heading">
-          <h3>Última respuesta</h3>
-          <span className="chip">REST</span>
+          <h3>Última acción</h3>
+          <span className="chip">Datos</span>
         </div>
-        <pre className="json-block">{lastReservation ? stringifyJson(lastReservation) : 'Sin acciones todavía.'}</pre>
+        <pre className="json-block">
+          {lastReservation ? stringifyJson(buildReservationPreview(lastReservation)) : 'Sin acciones todavía.'}
+        </pre>
         {lastReservation ? (
           <div className="meta-grid">
             <span>ID: {lastReservation.id}</span>
-            <span>Estado: {lastReservation.status}</span>
+            <span>Estado: {formatReservationStatus(lastReservation.status)}</span>
             <span>Inicio: {formatDateTime(lastReservation.startsAt)}</span>
             <span>Fin: {formatDateTime(lastReservation.endsAt)}</span>
           </div>

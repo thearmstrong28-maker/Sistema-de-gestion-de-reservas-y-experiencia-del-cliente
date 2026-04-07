@@ -78,10 +78,10 @@ export function ReportsPage() {
     <section className="page-stack">
       <div className="page-header">
         <div>
-          <p className="eyebrow">RF-08 · RF-09</p>
+          <p className="eyebrow">Ocupación y clientes frecuentes</p>
           <h2>Reportes</h2>
         </div>
-        <p className="muted">Ocupación diaria y clientes frecuentes sin ruido visual.</p>
+        <p className="muted">Ocupación diaria y clientes frecuentes con lectura rápida.</p>
       </div>
 
       <div className="two-column-grid">
@@ -99,7 +99,7 @@ export function ReportsPage() {
               />
             </label>
             <label>
-              Shift ID
+              ID del turno
               <input
                 value={occupancyForm.shiftId}
                 onChange={(event) =>
@@ -121,11 +121,11 @@ export function ReportsPage() {
             <table>
               <thead>
                 <tr>
-                  <th>Shift</th>
+                  <th>Turno</th>
                   <th>Fecha</th>
-                  <th>Ocupadas</th>
+                  <th>Mesas ocupadas</th>
                   <th>Capacidad</th>
-                  <th>%</th>
+                  <th>% ocupación</th>
                 </tr>
               </thead>
               <tbody>
@@ -153,7 +153,7 @@ export function ReportsPage() {
           <h3>Clientes frecuentes</h3>
           <div className="form-grid">
             <label>
-              Mínimo visitas
+              Mínimo de visitas
               <input
                 type="number"
                 min={1}
@@ -187,7 +187,7 @@ export function ReportsPage() {
                 <tr>
                   <th>Cliente</th>
                   <th>Visitas</th>
-                  <th>No-show</th>
+                  <th>Ausencias</th>
                   <th>Última visita</th>
                 </tr>
               </thead>

@@ -23,6 +23,9 @@ export class UserEntity {
   @Column({ name: 'full_name', type: 'text' })
   fullName: string;
 
+  @Column({ name: 'restaurant_name', type: 'text', nullable: true })
+  restaurantName?: string | null;
+
   @Column({ type: 'enum', enum: Role, default: Role.Customer })
   role: Role;
 

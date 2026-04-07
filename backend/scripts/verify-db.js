@@ -113,6 +113,7 @@ async function main() {
       `
         SELECT
           (SELECT COUNT(*) FROM users WHERE email = 'admin@local.test') AS admin_users,
+          (SELECT password_hash FROM users WHERE email = 'admin@local.test') AS admin_password_hash,
           (SELECT COUNT(*) FROM shifts) AS shifts_count,
           (SELECT COUNT(*) FROM restaurant_tables) AS tables_count,
           (SELECT COUNT(*) FROM user_classes) AS user_classes_count
@@ -129,6 +130,12 @@ async function main() {
     }
     if (asNumber(seedRow.user_classes_count) !== 4) {
       throw new Error('expected exactly 4 seeded user classes');
+    }
+    if (
+      typeof seedRow.admin_password_hash !== 'string' ||
+      !/^\$2[aby]\$/.test(seedRow.admin_password_hash)
+    ) {
+      throw new Error('admin seed password hash is missing or invalid');
     }
     results.push({ name: 'seed data present', ok: true, detail: 'admin user, shifts, tables, and user classes found' });
 

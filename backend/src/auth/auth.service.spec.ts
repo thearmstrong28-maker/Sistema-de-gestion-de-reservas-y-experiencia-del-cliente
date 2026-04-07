@@ -86,14 +86,17 @@ describe('AuthService', () => {
 
     const result = await service.register({
       email: 'Guest@Example.Test',
+      phone: '+54 9 11 5555-4444',
+      restaurantName: 'Casa del Sabor',
       password: 'StrongP@ss1',
-      fullName: 'Guest User',
     });
 
     expect(userRepository.save).toHaveBeenCalledWith(
       expect.objectContaining({
         email: 'guest@example.test',
-        fullName: 'Guest User',
+        fullName: 'Casa del Sabor',
+        restaurantName: 'Casa del Sabor',
+        phone: '+54 9 11 5555-4444',
         role: Role.Customer,
         isActive: true,
       }),
@@ -108,7 +111,9 @@ describe('AuthService', () => {
       expect.objectContaining({
         id: 'user-1',
         email: 'guest@example.test',
-        fullName: 'Guest User',
+        fullName: 'Casa del Sabor',
+        restaurantName: 'Casa del Sabor',
+        phone: '+54 9 11 5555-4444',
         role: Role.Customer,
         isActive: true,
       }),
@@ -125,8 +130,9 @@ describe('AuthService', () => {
     await expect(
       service.register({
         email: 'guest@example.test',
+        phone: '+54 9 11 5555-4444',
+        restaurantName: 'Casa del Sabor',
         password: 'StrongP@ss1',
-        fullName: 'Guest User',
       }),
     ).rejects.toBeInstanceOf(ConflictException);
   });
@@ -135,8 +141,9 @@ describe('AuthService', () => {
     await expect(
       service.register({
         email: 'guest@example.test',
+        phone: '+54 9 11 5555-4444',
+        restaurantName: 'Casa del Sabor',
         password: 'StrongP@ss1',
-        fullName: 'Guest User',
         role: Role.Admin,
       }),
     ).rejects.toBeInstanceOf(ForbiddenException);

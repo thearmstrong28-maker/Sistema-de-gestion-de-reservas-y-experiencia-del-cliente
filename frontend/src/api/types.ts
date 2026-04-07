@@ -13,6 +13,10 @@ export type WaitlistStatus =
   | 'expired'
   | 'cancelled'
 
+export type UserRole = 'admin' | 'host' | 'manager' | 'customer'
+
+export type InternalUserRole = 'host' | 'manager'
+
 export interface RestaurantTable {
   id: string
   tableNumber: number
@@ -97,6 +101,65 @@ export interface FrequentCustomerRow {
   visitCount: number
   noShowCount: number
   lastVisitAt: string | null
+}
+
+export interface AuthProfile {
+  userId: string
+  email: string
+  role: UserRole
+  fullName: string
+}
+
+export interface LoginRequest {
+  email: string
+  password: string
+}
+
+export interface LoginResponse {
+  accessToken: string
+}
+
+export interface RegisterRequest {
+  email: string
+  phone: string
+  restaurantName: string
+  password: string
+}
+
+export interface RegisterResponse {
+  id: string
+  email: string
+  fullName: string
+  restaurantName: string | null
+  phone: string | null
+  role: UserRole
+  isActive: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CreateInternalUserRequest {
+  email: string
+  fullName: string
+  password: string
+  role: InternalUserRole
+}
+
+export interface AdminUser {
+  id: string
+  email: string
+  fullName: string
+  role: UserRole
+  isActive: boolean
+  phone: string | null
+  lastLoginAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ListUsersQuery {
+  role?: Exclude<UserRole, 'admin'>
+  isActive?: boolean
 }
 
 export type AvailabilityRequest = CheckAvailabilityRequest

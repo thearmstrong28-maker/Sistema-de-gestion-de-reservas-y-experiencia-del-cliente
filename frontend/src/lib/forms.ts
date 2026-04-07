@@ -36,5 +36,5 @@ export const parseJsonRecord = (
     // Fall through to the user-facing error below.
   }
 
-  throw new Error('Las preferencias deben ser un objeto JSON válido.')
+  throw new Error('Las preferencias deben escribirse como un objeto válido.')
 }

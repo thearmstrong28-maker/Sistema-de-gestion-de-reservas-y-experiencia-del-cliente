@@ -4,6 +4,7 @@ import type { Customer, CreateCustomerRequest, Reservation } from '../api/types'
 import { StatusMessage } from '../components/StatusMessage'
 import { formatDateTime, stringifyJson } from '../lib/format'
 import { parseJsonRecord } from '../lib/forms'
+import { formatReservationStatus } from '../lib/labels'
 
 type Status = 'idle' | 'loading' | 'success' | 'error'
 
@@ -20,6 +21,18 @@ const emptyCustomerState = {
   preferences: '',
   notes: '',
 }
+
+const buildCustomerPreview = (customer: Customer) => ({
+  id: customer.id,
+  nombreCompleto: customer.fullName,
+  correoElectronico: customer.email ?? '—',
+  telefono: customer.phone ?? '—',
+  preferencias: customer.preferences ?? '—',
+  cantidadDeVisitas: customer.visitCount,
+  notas: customer.notes ?? '—',
+  creadoEl: customer.createdAt,
+  actualizadoEl: customer.updatedAt,
+})
 
 export function CustomersPage() {
   const [customerForm, setCustomerForm] = useState(emptyCustomerState)
@@ -40,6 +53,17 @@ export function CustomersPage() {
     data: null,
   })
   const [historyCustomerId, setHistoryCustomerId] = useState('')
+  const normalizedSearchTerm = searchTerm.trim().toLowerCase()
+  const visibleCustomers =
+    searchState.data?.filter((customer) => {
+      if (!normalizedSearchTerm) {
+        return true
+      }
+
+      return [customer.fullName, customer.email, customer.phone, customer.id]
+        .filter((value): value is string => Boolean(value))
+        .some((value) => value.toLowerCase().includes(normalizedSearchTerm))
+    }) ?? []
 
   const createCustomer = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -67,9 +91,7 @@ export function CustomersPage() {
     setSearchState({ status: 'loading', message: 'Buscando clientes...', data: null })
 
     try {
-      const { data } = await api.get<Customer[]>('/customers', {
-        params: searchTerm.trim() ? { q: searchTerm.trim() } : undefined,
-      })
+      const { data } = await api.get<Customer[]>('/customers')
       setSearchState({ status: 'success', message: 'Búsqueda lista.', data })
     } catch (error) {
       setSearchState({ status: 'error', message: getApiErrorMessage(error), data: null })
@@ -78,7 +100,7 @@ export function CustomersPage() {
 
   const loadHistory = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    setHistoryState({ status: 'loading', message: 'Cargando historial...', data: null })
+    setHistoryState({ status: 'loading', message: 'Cargando historial de visitas...', data: null })
 
     try {
       const { data } = await api.get<Reservation[]>(
@@ -94,7 +116,7 @@ export function CustomersPage() {
     <section className="page-stack">
       <div className="page-header">
         <div>
-          <p className="eyebrow">RF-05 · RF-06</p>
+          <p className="eyebrow">Registro y seguimiento de clientes</p>
           <h2>Clientes</h2>
         </div>
         <p className="muted">Alta de clientes con preferencias e historial de visitas.</p>
@@ -115,7 +137,7 @@ export function CustomersPage() {
           </label>
           <div className="form-grid">
             <label>
-              Email
+              Correo electrónico
               <input
                 type="email"
                 value={customerForm.email}
@@ -135,10 +157,10 @@ export function CustomersPage() {
             </label>
           </div>
           <label>
-            Preferencias JSON
+            Preferencias estructuradas
             <textarea
               rows={5}
-              placeholder='{"alergias":["nueces"],"mesaPreferida":"ventana"}'
+              placeholder='{"alergias":["frutos secos"],"mesaPreferida":"junto a la ventana"}'
               value={customerForm.preferences}
               onChange={(event) =>
                 setCustomerForm({ ...customerForm, preferences: event.target.value })
@@ -166,11 +188,12 @@ export function CustomersPage() {
           <form className="panel form-panel" onSubmit={searchCustomers}>
             <h3>Buscar clientes</h3>
             <label>
-              Texto libre
+              Buscar
               <input
+                type="search"
                 value={searchTerm}
                 onChange={(event) => setSearchTerm(event.target.value)}
-                placeholder="Nombre, email o teléfono"
+                placeholder="Nombre, correo, teléfono o ID"
               />
             </label>
             <button type="submit" className="button button-secondary">
@@ -179,8 +202,8 @@ export function CustomersPage() {
             <StatusMessage status={searchState.status} message={searchState.message} />
 
             <div className="list-card">
-              {searchState.data?.length ? (
-                searchState.data.map((customer) => (
+              {visibleCustomers.length ? (
+                visibleCustomers.map((customer) => (
                   <button
                     key={customer.id}
                     type="button"
@@ -191,6 +214,8 @@ export function CustomersPage() {
                     <span>{customer.id}</span>
                   </button>
                 ))
+              ) : searchState.data?.length ? (
+                <p className="muted">Sin coincidencias para la búsqueda actual.</p>
               ) : (
                 <p className="muted">Sin resultados todavía.</p>
               )}
@@ -200,7 +225,7 @@ export function CustomersPage() {
           <form className="panel form-panel" onSubmit={loadHistory}>
             <h3>Historial de visitas</h3>
             <label>
-              Customer ID
+              ID del cliente
               <input
                 value={historyCustomerId}
                 onChange={(event) => setHistoryCustomerId(event.target.value)}
@@ -218,7 +243,7 @@ export function CustomersPage() {
                 historyState.data.map((reservation) => (
                   <article key={reservation.id} className="history-item">
                     <div>
-                      <strong>{reservation.status}</strong>
+                      <strong>{formatReservationStatus(reservation.status)}</strong>
                       <p>
                         {formatDateTime(reservation.startsAt)} -{' '}
                         {formatDateTime(reservation.endsAt)}
@@ -237,11 +262,11 @@ export function CustomersPage() {
 
       <article className="panel result-panel">
         <div className="panel-heading">
-          <h3>Último cliente creado</h3>
-          <span className="chip">JSON</span>
+          <h3>Último cliente registrado</h3>
+          <span className="chip">Datos</span>
         </div>
         <pre className="json-block">
-          {createState.data ? stringifyJson(createState.data) : 'Sin registros todavía.'}
+          {createState.data ? stringifyJson(buildCustomerPreview(createState.data)) : 'Sin registros todavía.'}
         </pre>
       </article>
     </section>

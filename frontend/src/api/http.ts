@@ -21,6 +21,17 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   return config
 })
 
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (axios.isAxiosError(error) && error.response?.status === 401) {
+      useAuthStore.getState().clearSession()
+    }
+
+    return Promise.reject(error)
+  },
+)
+
 export const getApiErrorMessage = (error: unknown): string => {
   if (axios.isAxiosError(error)) {
     return getAxiosErrorMessage(error)
@@ -30,7 +41,7 @@ export const getApiErrorMessage = (error: unknown): string => {
     return error.message
   }
 
-  return 'Ocurrió un error inesperado.'
+  return 'Se produjo un error inesperado.'
 }
 
 const getAxiosErrorMessage = (error: AxiosError<ApiErrorResponse>): string => {
@@ -53,11 +64,8 @@ const getAxiosErrorMessage = (error: AxiosError<ApiErrorResponse>): string => {
   }
 
   if (error.response) {
-    const suffix = error.response.statusText.trim()
-    return suffix
-      ? `Error ${error.response.status}: ${suffix}`
-      : `Error ${error.response.status} al comunicarse con la API.`
+    return `Error ${error.response.status} al comunicarse con el servidor.`
   }
 
-  return 'No se pudo conectar con la API. Revisá VITE_API_URL o el backend.'
+  return 'No se pudo conectar con el servidor. Revisá la configuración.'
 }

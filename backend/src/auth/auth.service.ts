@@ -21,6 +21,8 @@ interface PublicUser {
   id: string;
   email: string;
   fullName: string;
+  restaurantName: string | null;
+  phone: string | null;
   role: Role;
   isActive: boolean;
   createdAt: Date;
@@ -74,10 +76,14 @@ export class AuthService {
       registerDto.password,
       this.bcryptRounds,
     );
+    const restaurantName = registerDto.restaurantName.trim();
+    const phone = registerDto.phone.trim();
     const user = this.userRepository.create({
       email,
       passwordHash,
-      fullName: registerDto.fullName.trim(),
+      fullName: restaurantName,
+      restaurantName,
+      phone,
       role,
       isActive: true,
     });
@@ -216,6 +222,8 @@ export class AuthService {
       id: user.id,
       email: user.email,
       fullName: user.fullName,
+      restaurantName: user.restaurantName ?? null,
+      phone: user.phone ?? null,
       role: user.role,
       isActive: user.isActive,
       createdAt: user.createdAt,
