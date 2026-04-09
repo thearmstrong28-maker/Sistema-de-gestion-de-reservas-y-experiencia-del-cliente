@@ -44,7 +44,7 @@ describe('ReportsService', () => {
   });
 
   it('reads daily summary and keeps zero values when there is no data', async () => {
-    dataSource.query.mockResolvedValueOnce([]);
+    dataSource.query.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
 
     const row = await service.getDailySummary(
       { restaurantName: 'Restaurante principal' } as never,
@@ -65,7 +65,7 @@ describe('ReportsService', () => {
   });
 
   it('reads daily comparison view', async () => {
-    dataSource.query.mockResolvedValue([
+    dataSource.query.mockResolvedValueOnce([]).mockResolvedValueOnce([
       {
         reportDate: '2026-04-04',
         reservationsCount: '12',

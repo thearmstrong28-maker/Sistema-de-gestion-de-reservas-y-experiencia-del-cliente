@@ -37,7 +37,7 @@ export const formatUserRole = (role: UserRole): string => {
     case 'admin':
       return 'Administrador'
     case 'host':
-      return 'Host'
+      return 'Recepcionista'
     case 'manager':
       return 'Gerente'
     case 'customer':

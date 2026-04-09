@@ -15,14 +15,33 @@ export type WaitlistStatus =
 
 export type UserRole = 'admin' | 'host' | 'manager' | 'customer'
 
-export type InternalUserRole = 'customer' | 'host' | 'manager'
+export type InternalUserRole = 'host' | 'manager'
+
+export type EditableUserRole = Exclude<UserRole, 'admin'>
 
 export interface RestaurantTable {
   id: string
   tableNumber: number
   area: string | null
   capacity: number
+  posX: number | null
+  posY: number | null
+  layoutLabel: string | null
   isActive: boolean
+}
+
+export interface ReportSnapshot {
+  id: string
+  restaurantName: string
+  reportDate: string
+  reservationsCount: number
+  attendedCount: number
+  customerCount: number
+  noShowCount: number
+  attendancePercent: number
+  source: string
+  createdAt: string
+  updatedAt: string
 }
 
 export interface Shift {
@@ -170,11 +189,18 @@ export interface RegisterResponse {
 }
 
 export interface CreateInternalUserRequest {
-  email: string
+  email?: string
   fullName: string
   phone?: string
   password: string
   role: InternalUserRole
+}
+
+export interface UpdateUserRequest {
+  fullName?: string
+  email?: string
+  phone?: string | null
+  role?: EditableUserRole
 }
 
 export interface AdminUser {
@@ -198,6 +224,18 @@ export interface ListUsersQuery {
 export interface CreateTablesBulkRequest {
   quantity: number
   capacity?: number
+}
+
+export interface TableDistributionItem {
+  tableNumber: number
+  capacity: number
+  posX: number
+  posY: number
+  layoutLabel?: string
+}
+
+export interface CreateTablesDistributionRequest {
+  tables: TableDistributionItem[]
 }
 
 export type AvailabilityRequest = CheckAvailabilityRequest

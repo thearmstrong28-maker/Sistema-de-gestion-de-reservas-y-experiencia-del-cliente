@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  Patch,
   Post,
   Query,
   Req,
@@ -16,6 +17,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import type { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { CreateInternalUserDto } from './dto/create-internal-user.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
 import { ListUsersQueryDto } from './dto/list-users.query.dto';
 import { UsersService, type PublicUser } from './users.service';
 
@@ -42,6 +44,15 @@ export class UsersController {
     @Query() query: ListUsersQueryDto,
   ): Promise<PublicUser[]> {
     return this.usersService.list(request.user, query);
+  }
+
+  @Patch(':id')
+  update(
+    @Req() request: Request & { user: AuthenticatedUser },
+    @Param('id') id: string,
+    @Body() updateUserDto: UpdateUserDto,
+  ): Promise<PublicUser> {
+    return this.usersService.update(request.user, id, updateUserDto);
   }
 
   @Delete(':id')

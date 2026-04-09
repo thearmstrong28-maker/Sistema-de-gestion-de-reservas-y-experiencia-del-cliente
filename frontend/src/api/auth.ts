@@ -23,3 +23,10 @@ export const fetchMe = async (): Promise<AuthProfile> => {
   const { data } = await api.get<AuthProfile>('/auth/me')
   return data
 }
+
+export const verifyAdminPassword = async (password: string): Promise<{ valid: true }> => {
+  const { data } = await api.post<{ valid: true }>('/auth/verificar-contrasena', {
+    password,
+  })
+  return data
+}

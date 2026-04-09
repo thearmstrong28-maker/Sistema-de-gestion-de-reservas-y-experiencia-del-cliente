@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   Post,
   Req,
   Res,
@@ -11,7 +12,9 @@ import type { Request, Response } from 'express';
 import { Roles } from './decorators/roles.decorator';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+import { VerifyPasswordDto } from './dto/verify-password.dto';
 import { ALL_ROLES } from './enums/role.enum';
+import { Role } from './enums/role.enum';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 import type { AuthenticatedUser } from './interfaces/authenticated-user.interface';
@@ -64,5 +67,19 @@ export class AuthController {
   @Get('me')
   me(@Req() request: Request & { user: AuthenticatedUser }): AuthenticatedUser {
     return request.user;
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.Admin)
+  @HttpCode(200)
+  @Post('verificar-contrasena')
+  verifyPassword(
+    @Req() request: Request & { user: AuthenticatedUser },
+    @Body() verifyPasswordDto: VerifyPasswordDto,
+  ): Promise<{ valid: true }> {
+    return this.authService.verifyPassword(
+      request.user.userId,
+      verifyPasswordDto.password,
+    );
   }
 }

@@ -24,6 +24,15 @@ export class RestaurantTableEntity {
   @Column({ type: 'int' })
   capacity: number;
 
+  @Column({ name: 'pos_x', type: 'int', nullable: true })
+  posX?: number | null;
+
+  @Column({ name: 'pos_y', type: 'int', nullable: true })
+  posY?: number | null;
+
+  @Column({ name: 'layout_label', type: 'text', nullable: true })
+  layoutLabel?: string | null;
+
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive: boolean;
 

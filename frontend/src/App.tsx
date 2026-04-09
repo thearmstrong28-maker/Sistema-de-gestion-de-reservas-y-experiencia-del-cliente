@@ -6,6 +6,8 @@ import { SessionBootstrap } from './components/SessionBootstrap'
 import { HomePage } from './pages/HomePage'
 import { LoginPage } from './pages/LoginPage'
 import { AdministrationPage } from './pages/EstablishmentPage'
+import { ManagerPage } from './pages/ManagerPage'
+import { ReceptionistPage } from './pages/ReceptionistPage'
 import { RegisterPage } from './pages/RegisterPage'
 
 function App() {
@@ -17,6 +19,8 @@ function App() {
           <Route index element={<HomePage />} />
           <Route path="login" element={<LoginPage />} />
           <Route path="registro" element={<RegisterPage />} />
+          <Route path="gerente" element={<ManagerPage />} />
+          <Route path="recepcionista" element={<ReceptionistPage />} />
           <Route element={<RequireAdmin />}>
             <Route path="administracion" element={<AdministrationPage />} />
             <Route path="establecimiento" element={<Navigate to="/administracion" replace />} />

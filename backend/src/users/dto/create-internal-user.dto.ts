@@ -5,20 +5,20 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
-  Matches,
   MaxLength,
   MinLength,
 } from 'class-validator';
 import { Role } from '../../auth/enums/role.enum';
 
-const INTERNAL_ROLES = [Role.Customer, Role.Host, Role.Manager] as const;
+const INTERNAL_ROLES = [Role.Host, Role.Manager] as const;
 
 export class CreateInternalUserDto {
   @Transform(({ value }: { value: unknown }) =>
     typeof value === 'string' ? value.trim() : value,
   )
+  @IsOptional()
   @IsEmail({}, { message: 'Ingresá un correo electrónico válido.' })
-  email: string;
+  email?: string;
 
   @Transform(({ value }: { value: unknown }) =>
     typeof value === 'string' ? value.trim() : value,
@@ -32,12 +32,8 @@ export class CreateInternalUserDto {
 
   @IsString({ message: 'La contraseña debe ser un texto válido.' })
   @IsNotEmpty({ message: 'La contraseña es obligatoria.' })
-  @MinLength(8, {
-    message: 'La contraseña debe tener al menos 8 caracteres.',
-  })
-  @Matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).+$/, {
-    message:
-      'La contraseña debe tener al menos 8 caracteres, una mayúscula, una minúscula, un número y un símbolo.',
+  @MinLength(6, {
+    message: 'La contraseña debe tener al menos 6 caracteres.',
   })
   password: string;
 

@@ -27,6 +27,7 @@ const REQUIRED_OBJECTS = [
   'public.daily_shift_occupancy',
   'public.daily_establishment_report',
   'public.frequent_customers',
+  'public.report_snapshots',
   'public.ux_reservations_active_customer_shift',
   'public.ix_reservations_date_shift_status',
   'public.ix_reservations_table_status',
@@ -34,6 +35,7 @@ const REQUIRED_OBJECTS = [
   'public.ix_tables_capacity_active',
   'public.ix_user_classes_role',
   'public.ix_user_classes_is_active',
+  'public.ix_report_snapshots_restaurant_date',
 ];
 
 function makeClient() {

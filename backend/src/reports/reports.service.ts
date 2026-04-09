@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { DailyComparisonQueryDto } from './dto/daily-comparison.query.dto';
@@ -46,6 +46,20 @@ export interface FrequentCustomerRow {
   lastVisitAt: string | null;
 }
 
+export interface ReportSnapshotRow {
+  id: string;
+  restaurantName: string;
+  reportDate: string;
+  reservationsCount: number;
+  attendedCount: number;
+  customerCount: number;
+  noShowCount: number;
+  attendancePercent: number;
+  source: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 @Injectable()
 export class ReportsService {
   constructor(private readonly dataSource: DataSource) {}
@@ -56,7 +70,11 @@ export class ReportsService {
   ): Promise<DailySummaryRow> {
     const restaurantName = this.resolveRestaurantName(admin);
     const reportDate = this.resolveReportDate(query.date);
-    const row = await this.getDailyMetrics(reportDate);
+    await this.ensureSnapshotForDate(restaurantName, reportDate);
+
+    const row = this.isPastDate(reportDate)
+      ? await this.getSnapshotMetrics(restaurantName, reportDate)
+      : await this.getDailyMetrics(reportDate);
 
     return {
       restaurantName,
@@ -69,9 +87,10 @@ export class ReportsService {
     admin: AuthenticatedUser,
     query: DailyComparisonQueryDto,
   ): Promise<DailyComparisonRow[]> {
+    const restaurantName = this.resolveRestaurantName(admin);
     const reportDate = this.resolveReportDate(query.date);
     const days = Math.min(Math.max(query.days ?? 7, 1), 30);
-    this.resolveRestaurantName(admin);
+    await this.ensureSnapshotsForRange(restaurantName, reportDate, days);
 
     const rawRows: unknown = await this.dataSource.query(
       `
@@ -84,11 +103,28 @@ export class ReportsService {
         )
         SELECT
           to_char(d.report_date, 'YYYY-MM-DD') AS "reportDate",
-          COALESCE(m.reservations_count, 0) AS "reservationsCount",
-          COALESCE(m.attended_count, 0) AS "attendedCount",
-          COALESCE(m.customer_count, 0) AS "customerCount",
-          COALESCE(m.no_show_count, 0) AS "noShowCount",
           CASE
+            WHEN d.report_date < CURRENT_DATE
+              THEN COALESCE(s.reservations_count, 0)
+              ELSE COALESCE(m.reservations_count, 0)
+          END AS "reservationsCount",
+          CASE
+            WHEN d.report_date < CURRENT_DATE
+              THEN COALESCE(s.attended_count, 0)
+              ELSE COALESCE(m.attended_count, 0)
+          END AS "attendedCount",
+          CASE
+            WHEN d.report_date < CURRENT_DATE
+              THEN COALESCE(s.customer_count, 0)
+              ELSE COALESCE(m.customer_count, 0)
+          END AS "customerCount",
+          CASE
+            WHEN d.report_date < CURRENT_DATE
+              THEN COALESCE(s.no_show_count, 0)
+              ELSE COALESCE(m.no_show_count, 0)
+          END AS "noShowCount",
+          CASE
+            WHEN d.report_date < CURRENT_DATE THEN COALESCE(s.attendance_percent, 0)
             WHEN COALESCE(m.reservations_count, 0) = 0 THEN 0
             ELSE ROUND(
               (COALESCE(m.attended_count, 0)::numeric / COALESCE(m.reservations_count, 0)::numeric) * 100,
@@ -96,13 +132,18 @@ export class ReportsService {
             )
           END AS "attendancePercent"
         FROM requested_dates d
+        LEFT JOIN report_snapshots s
+          ON s.report_date = d.report_date
+          AND s.restaurant_name = $3
         LEFT JOIN daily_establishment_report m
           ON m.report_date = d.report_date
         ORDER BY d.report_date ASC
       `,
-      [reportDate, days],
+      [reportDate, days, restaurantName],
     );
-    const rows = rawRows as Array<Record<string, unknown>>;
+    const rows = Array.isArray(rawRows)
+      ? (rawRows as Array<Record<string, unknown>>)
+      : [];
 
     return rows.map((row: Record<string, unknown>) => ({
       reportDate: String(row.reportDate),
@@ -186,6 +227,68 @@ export class ReportsService {
     }));
   }
 
+  async listSnapshots(admin: AuthenticatedUser): Promise<ReportSnapshotRow[]> {
+    const restaurantName = this.resolveRestaurantName(admin);
+    const rawRows: unknown = await this.dataSource.query(
+      `
+        SELECT
+          id,
+          restaurant_name AS "restaurantName",
+          report_date::text AS "reportDate",
+          reservations_count AS "reservationsCount",
+          attended_count AS "attendedCount",
+          customer_count AS "customerCount",
+          no_show_count AS "noShowCount",
+          attendance_percent AS "attendancePercent",
+          source,
+          created_at::text AS "createdAt",
+          updated_at::text AS "updatedAt"
+        FROM report_snapshots
+        WHERE restaurant_name = $1
+        ORDER BY report_date DESC, created_at DESC
+      `,
+      [restaurantName],
+    );
+
+    const rows = rawRows as Array<Record<string, unknown>>;
+    return rows.map((row) => ({
+      id: String(row.id),
+      restaurantName: String(row.restaurantName),
+      reportDate: String(row.reportDate),
+      reservationsCount: Number(row.reservationsCount),
+      attendedCount: Number(row.attendedCount),
+      customerCount: Number(row.customerCount),
+      noShowCount: Number(row.noShowCount),
+      attendancePercent: Number(row.attendancePercent),
+      source: String(row.source),
+      createdAt: String(row.createdAt),
+      updatedAt: String(row.updatedAt),
+    }));
+  }
+
+  async deleteSnapshot(
+    admin: AuthenticatedUser,
+    id: string,
+  ): Promise<{ deleted: true }> {
+    const restaurantName = this.resolveRestaurantName(admin);
+    const result: unknown = await this.dataSource.query(
+      `
+        DELETE FROM report_snapshots
+        WHERE id = $1::uuid
+          AND restaurant_name = $2
+        RETURNING id
+      `,
+      [id, restaurantName],
+    );
+
+    const rows = result as Array<{ id: string }>;
+    if (!rows.length) {
+      throw new NotFoundException('No se encontró el reporte para eliminar');
+    }
+
+    return { deleted: true };
+  }
+
   private async getDailyMetrics(
     reportDate: string,
   ): Promise<Omit<DailySummaryRow, 'restaurantName' | 'reportDate'>> {
@@ -209,7 +312,9 @@ export class ReportsService {
       `,
       [reportDate],
     );
-    const row = (rawRows as Array<Record<string, unknown>>)[0];
+    const row = Array.isArray(rawRows)
+      ? (rawRows as Array<Record<string, unknown>>)[0]
+      : undefined;
 
     if (!row) {
       return {
@@ -230,8 +335,186 @@ export class ReportsService {
     };
   }
 
+  private async ensureSnapshotForDate(
+    restaurantName: string,
+    reportDate: string,
+  ): Promise<void> {
+    if (!this.isPastDate(reportDate)) {
+      return;
+    }
+
+    await this.dataSource.query(
+      `
+        WITH metrics AS (
+          SELECT
+            $2::date AS report_date,
+            COALESCE(m.reservations_count, 0) AS reservations_count,
+            COALESCE(m.attended_count, 0) AS attended_count,
+            COALESCE(m.customer_count, 0) AS customer_count,
+            COALESCE(m.no_show_count, 0) AS no_show_count,
+            CASE
+              WHEN COALESCE(m.reservations_count, 0) = 0 THEN 0
+              ELSE ROUND(
+                (COALESCE(m.attended_count, 0)::numeric / COALESCE(m.reservations_count, 0)::numeric) * 100,
+                2
+              )
+            END AS attendance_percent
+          FROM (SELECT 1) seed
+          LEFT JOIN daily_establishment_report m
+            ON m.report_date = $2::date
+        )
+        INSERT INTO report_snapshots (
+          restaurant_name,
+          report_date,
+          reservations_count,
+          attended_count,
+          customer_count,
+          no_show_count,
+          attendance_percent,
+          source
+        )
+        SELECT
+          $1,
+          report_date,
+          reservations_count,
+          attended_count,
+          customer_count,
+          no_show_count,
+          attendance_percent,
+          'auto_query_backfill'
+        FROM metrics
+        ON CONFLICT (restaurant_name, report_date)
+        DO UPDATE SET
+          reservations_count = EXCLUDED.reservations_count,
+          attended_count = EXCLUDED.attended_count,
+          customer_count = EXCLUDED.customer_count,
+          no_show_count = EXCLUDED.no_show_count,
+          attendance_percent = EXCLUDED.attendance_percent,
+          source = CASE
+            WHEN report_snapshots.source = 'manual' THEN report_snapshots.source
+            ELSE EXCLUDED.source
+          END,
+          updated_at = NOW()
+      `,
+      [restaurantName, reportDate],
+    );
+  }
+
+  private async ensureSnapshotsForRange(
+    restaurantName: string,
+    reportDate: string,
+    days: number,
+  ): Promise<void> {
+    await this.dataSource.query(
+      `
+        WITH requested_dates AS (
+          SELECT generate_series(
+            ($2::date - (($3 - 1) * INTERVAL '1 day'))::date,
+            $2::date,
+            INTERVAL '1 day'
+          )::date AS report_date
+        ),
+        metrics AS (
+          SELECT
+            d.report_date,
+            COALESCE(m.reservations_count, 0) AS reservations_count,
+            COALESCE(m.attended_count, 0) AS attended_count,
+            COALESCE(m.customer_count, 0) AS customer_count,
+            COALESCE(m.no_show_count, 0) AS no_show_count,
+            CASE
+              WHEN COALESCE(m.reservations_count, 0) = 0 THEN 0
+              ELSE ROUND(
+                (COALESCE(m.attended_count, 0)::numeric / COALESCE(m.reservations_count, 0)::numeric) * 100,
+                2
+              )
+            END AS attendance_percent
+          FROM requested_dates d
+          LEFT JOIN daily_establishment_report m ON m.report_date = d.report_date
+          WHERE d.report_date < CURRENT_DATE
+        )
+        INSERT INTO report_snapshots (
+          restaurant_name,
+          report_date,
+          reservations_count,
+          attended_count,
+          customer_count,
+          no_show_count,
+          attendance_percent,
+          source
+        )
+        SELECT
+          $1,
+          report_date,
+          reservations_count,
+          attended_count,
+          customer_count,
+          no_show_count,
+          attendance_percent,
+          'auto_query_backfill'
+        FROM metrics
+        ON CONFLICT (restaurant_name, report_date)
+        DO UPDATE SET
+          reservations_count = EXCLUDED.reservations_count,
+          attended_count = EXCLUDED.attended_count,
+          customer_count = EXCLUDED.customer_count,
+          no_show_count = EXCLUDED.no_show_count,
+          attendance_percent = EXCLUDED.attendance_percent,
+          source = CASE
+            WHEN report_snapshots.source = 'manual' THEN report_snapshots.source
+            ELSE EXCLUDED.source
+          END,
+          updated_at = NOW()
+      `,
+      [restaurantName, reportDate, days],
+    );
+  }
+
+  private async getSnapshotMetrics(
+    restaurantName: string,
+    reportDate: string,
+  ): Promise<Omit<DailySummaryRow, 'restaurantName' | 'reportDate'>> {
+    const rawRows: unknown = await this.dataSource.query(
+      `
+        SELECT
+          reservations_count AS "reservationsCount",
+          attended_count AS "attendedCount",
+          customer_count AS "customerCount",
+          no_show_count AS "noShowCount",
+          attendance_percent AS "attendancePercent"
+        FROM report_snapshots
+        WHERE restaurant_name = $1
+          AND report_date = $2::date
+        LIMIT 1
+      `,
+      [restaurantName, reportDate],
+    );
+
+    const row = Array.isArray(rawRows)
+      ? (rawRows as Array<Record<string, unknown>>)[0]
+      : undefined;
+    if (!row) {
+      return this.getDailyMetrics(reportDate);
+    }
+
+    return {
+      reservationsCount: Number(row.reservationsCount),
+      attendedCount: Number(row.attendedCount),
+      customerCount: Number(row.customerCount),
+      noShowCount: Number(row.noShowCount),
+      attendancePercent: Number(row.attendancePercent),
+    };
+  }
+
   private resolveRestaurantName(admin: AuthenticatedUser): string {
     return admin.restaurantName?.trim() || 'Restaurante principal';
+  }
+
+  private isPastDate(reportDate: string): boolean {
+    return reportDate < this.getTodayDate();
+  }
+
+  private getTodayDate(): string {
+    return new Date().toISOString().slice(0, 10);
   }
 
   private resolveReportDate(value?: Date): string {

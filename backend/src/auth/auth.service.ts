@@ -194,6 +194,20 @@ export class AuthService {
       .map((userClass) => this.toPublicUserClass(userClass));
   }
 
+  async verifyPassword(
+    userId: string,
+    password: string,
+  ): Promise<{ valid: true }> {
+    const user = await this.findActiveUserById(userId);
+    const matches = await bcrypt.compare(password, user.passwordHash);
+
+    if (!matches) {
+      throw new UnauthorizedException('La contraseña ingresada no es correcta');
+    }
+
+    return { valid: true };
+  }
+
   private async findActiveUserByEmailFromRepository(
     repository: Pick<Repository<UserEntity>, 'findOne'>,
     email: string,

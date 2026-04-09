@@ -6,6 +6,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import type { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { CreateTablesBulkDto } from './dto/create-tables-bulk.dto';
+import { CreateTablesDistributionDto } from './dto/create-tables-distribution.dto';
 import { EstablishmentService } from './establishment.service';
 
 @Controller('establishment')
@@ -27,5 +28,10 @@ export class EstablishmentController {
   @Post('tables/bulk')
   createTablesBulk(@Body() payload: CreateTablesBulkDto) {
     return this.establishmentService.createTablesBulk(payload);
+  }
+
+  @Post('tables/distribution')
+  createTablesDistribution(@Body() payload: CreateTablesDistributionDto) {
+    return this.establishmentService.createTablesDistribution(payload);
   }
 }

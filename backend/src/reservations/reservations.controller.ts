@@ -59,7 +59,7 @@ export class ReservationsController {
     return this.reservationsService.markNoShow(id);
   }
 
-  @Roles(Role.Admin, Role.Host)
+  @Roles(Role.Host)
   @Patch(':id/assign-table')
   assignTable(@Param('id') id: string, @Body() assignTableDto: AssignTableDto) {
     return this.reservationsService.assignTable(id, assignTableDto);

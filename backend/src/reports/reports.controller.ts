@@ -1,4 +1,12 @@
-import { Controller, Get, Query, Req, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import type { Request } from 'express';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { Role } from '../auth/enums/role.enum';
@@ -41,5 +49,18 @@ export class ReportsController {
   @Get('frequent-customers')
   frequentCustomers(@Query() query: FrequentCustomersQueryDto) {
     return this.reportsService.getFrequentCustomers(query);
+  }
+
+  @Get('snapshots')
+  snapshots(@Req() request: Request & { user: AuthenticatedUser }) {
+    return this.reportsService.listSnapshots(request.user);
+  }
+
+  @Delete('snapshots/:id')
+  deleteSnapshot(
+    @Req() request: Request & { user: AuthenticatedUser },
+    @Param('id') id: string,
+  ) {
+    return this.reportsService.deleteSnapshot(request.user, id);
   }
 }

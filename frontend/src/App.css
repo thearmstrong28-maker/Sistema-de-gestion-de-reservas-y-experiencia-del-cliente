@@ -408,6 +408,10 @@
   gap: 16px;
 }
 
+.users-layout-grid {
+  align-items: start;
+}
+
 .summary-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -416,6 +420,25 @@
 
 .summary-card h3 {
   font-size: clamp(1.6rem, 3vw, 2.2rem);
+}
+
+.user-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.user-actions .button-icon-image {
+  width: 24px;
+  height: 24px;
+}
+
+.user-edit-row td {
+  background: rgba(248, 250, 252, 0.8);
+}
+
+.user-edit-form {
+  margin-top: 2px;
 }
 
 .table-map {
@@ -482,6 +505,51 @@
 .button-tight {
   min-height: 40px;
   padding-inline: 14px;
+}
+
+.button-icon {
+  width: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border-radius: 14px;
+}
+
+.button-icon-image {
+  width: 18px;
+  height: 18px;
+  display: block;
+  object-fit: contain;
+}
+
+.button-icon-edit {
+  color: #1d4ed8;
+  border-color: rgba(29, 78, 216, 0.45);
+  background: rgba(29, 78, 216, 0.08);
+}
+
+.button-icon-edit .button-icon-image {
+  filter: invert(20%) sepia(91%) saturate(2725%) hue-rotate(216deg) brightness(91%) contrast(90%);
+}
+
+.button-icon-edit:hover:not(:disabled) {
+  background: rgba(29, 78, 216, 0.16);
+  border-color: rgba(29, 78, 216, 0.7);
+}
+
+.button-icon-delete {
+  color: #b91c1c;
+  border-color: rgba(185, 28, 28, 0.45);
+  background: rgba(185, 28, 28, 0.08);
+}
+
+.button-icon-delete .button-icon-image {
+  filter: invert(20%) sepia(89%) saturate(3278%) hue-rotate(349deg) brightness(89%) contrast(92%);
+}
+
+.button-icon-delete:hover:not(:disabled) {
+  background: rgba(185, 28, 28, 0.16);
+  border-color: rgba(185, 28, 28, 0.72);
 }
 
 .center-panel {
@@ -631,6 +699,11 @@ select:focus-visible,
 
 .table-scroll {
   overflow: auto;
+}
+
+.users-table-scroll {
+  max-height: 460px;
+  overflow-y: auto;
 }
 
 .table-scroll table {

@@ -1,33 +1,44 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import axios from 'axios'
 import {
   createInternalUser,
-  createTablesBulk,
+  createTablesDistribution,
+  deleteReportSnapshot,
   deleteUser,
   fetchDailyReportComparison,
   fetchDailyReportSummary,
   fetchEstablishmentSummary,
   fetchFrequentCustomers,
+  listReportSnapshots,
   listTables,
   listUsers,
+  updateUser,
 } from '../api/admin'
+import { verifyAdminPassword } from '../api/auth'
 import { getApiErrorMessage } from '../api/http'
 import type {
   AdminUser,
   CreateInternalUserRequest,
-  CreateTablesBulkRequest,
+  CreateTablesDistributionRequest,
   DailyComparisonRow,
   DailyReportSummary,
   DailySummaryQuery,
+  EstablishmentSummary,
   FrequentCustomerRow,
   InternalUserRole,
+  ReportSnapshot,
   RestaurantTable,
-  EstablishmentSummary,
+  TableDistributionItem,
+  EditableUserRole,
+  UpdateUserRequest,
 } from '../api/types'
 import { StatusMessage } from '../components/StatusMessage'
 import { formatDateTime, formatPercent } from '../lib/format'
 import { formatUserRole } from '../lib/labels'
 import { omitEmptyString } from '../lib/forms'
 import { useAuthStore } from '../store/auth'
+import editIcon from '../assets/icon-edit.png'
+import deleteIcon from '../assets/icon-delete.png'
 
 type Status = 'idle' | 'loading' | 'success' | 'error'
 type AdminTab = 'usuarios' | 'mesas' | 'reportes'
@@ -45,6 +56,23 @@ interface ReportFilters {
   limit: string
 }
 
+interface TablesDistributionForm {
+  quantity: string
+  capacity: string
+  startNumber: string
+  columns: string
+  spacingX: string
+  spacingY: string
+  layoutLabel: string
+}
+
+interface UserEditForm {
+  fullName: string
+  email: string
+  phone: string
+  role: EditableUserRole
+}
+
 const today = new Date().toISOString().slice(0, 10)
 
 const emptyCreateUserForm = {
@@ -52,13 +80,31 @@ const emptyCreateUserForm = {
   email: '',
   phone: '',
   password: '',
-  role: 'customer' as InternalUserRole,
+  role: 'host' as InternalUserRole,
 }
 
-const emptyTablesForm = {
-  quantity: '1',
-  capacity: '',
+const emptyDistributionForm: TablesDistributionForm = {
+  quantity: '4',
+  capacity: '4',
+  startNumber: '1',
+  columns: '4',
+  spacingX: '120',
+  spacingY: '120',
+  layoutLabel: 'Principal',
 }
+
+const emptyUserEditForm: UserEditForm = {
+  fullName: '',
+  email: '',
+  phone: '',
+  role: 'host',
+}
+
+const editableUserRoles: Array<{ value: EditableUserRole; label: string }> = [
+  { value: 'host', label: 'Recepcionista' },
+  { value: 'manager', label: 'Gerente' },
+  { value: 'customer', label: 'Cliente' },
+]
 
 const initialReportFilters: ReportFilters = {
   date: today,
@@ -68,9 +114,9 @@ const initialReportFilters: ReportFilters = {
 }
 
 const adminTabs: Array<{ id: AdminTab; label: string; description: string }> = [
-  { id: 'usuarios', label: 'Usuarios', description: 'Altas y bajas lógicas.' },
-  { id: 'mesas', label: 'Mesas', description: 'Carga masiva y mapa visual.' },
-  { id: 'reportes', label: 'Reportes', description: 'Resumen, comparativo y clientes frecuentes.' },
+  { id: 'usuarios', label: 'Usuarios', description: 'Alta y baja de recepcionistas, gerentes y clientes.' },
+  { id: 'mesas', label: 'Mesas', description: 'Distribución visual y capacidad por mesa.' },
+  { id: 'reportes', label: 'Reportes', description: 'Métricas, comparativo y gestión de snapshots.' },
 ]
 
 const parsePositiveInteger = (value: string, fallback: number): number => {
@@ -83,12 +129,32 @@ const parsePositiveInteger = (value: string, fallback: number): number => {
   return Math.trunc(parsed)
 }
 
+const getAdminUnlockErrorMessage = (error: unknown): string => {
+  if (axios.isAxiosError(error)) {
+    if (!error.response) {
+      return 'No se pudo conectar con el servidor. Verificá que el backend esté activo y la URL de la API sea correcta.'
+    }
+
+    if (error.response.status === 401) {
+      return 'La contraseña es incorrecta. Probá nuevamente.'
+    }
+  }
+
+  return getApiErrorMessage(error)
+}
+
 export function AdministrationPage() {
   const profile = useAuthStore((state) => state.profile)
   const [activeTab, setActiveTab] = useState<AdminTab>('usuarios')
-  const [establishmentState, setEstablishmentState] = useState<
-    ResultState<EstablishmentSummary | null>
-  >({
+  const [adminPassword, setAdminPassword] = useState('')
+  const [adminAccessState, setAdminAccessState] = useState<{ status: Status; message: string; unlocked: boolean }>(
+    {
+      status: 'idle',
+      message: 'Por seguridad, verificá tu contraseña para abrir Administración.',
+      unlocked: false,
+    },
+  )
+  const [establishmentState, setEstablishmentState] = useState<ResultState<EstablishmentSummary | null>>({
     status: 'idle',
     message: '',
     data: null,
@@ -107,7 +173,9 @@ export function AdministrationPage() {
     status: 'idle',
     message: '',
   })
-  const [tablesForm, setTablesForm] = useState(emptyTablesForm)
+  const [editingUserId, setEditingUserId] = useState<string | null>(null)
+  const [userEditForm, setUserEditForm] = useState<UserEditForm>(emptyUserEditForm)
+  const [tablesForm, setTablesForm] = useState<TablesDistributionForm>(emptyDistributionForm)
   const [tablesState, setTablesState] = useState<ResultState<RestaurantTable[]>>({
     status: 'idle',
     message: '',
@@ -119,9 +187,7 @@ export function AdministrationPage() {
   })
   const [selectedTableId, setSelectedTableId] = useState('')
   const [reportFilters, setReportFilters] = useState<ReportFilters>(initialReportFilters)
-  const [dailySummaryState, setDailySummaryState] = useState<
-    ResultState<DailyReportSummary | null>
-  >({
+  const [dailySummaryState, setDailySummaryState] = useState<ResultState<DailyReportSummary | null>>({
     status: 'idle',
     message: '',
     data: null,
@@ -135,6 +201,15 @@ export function AdministrationPage() {
     status: 'idle',
     message: '',
     data: [],
+  })
+  const [snapshotsState, setSnapshotsState] = useState<ResultState<ReportSnapshot[]>>({
+    status: 'idle',
+    message: '',
+    data: [],
+  })
+  const [snapshotsActionState, setSnapshotsActionState] = useState<{ status: Status; message: string }>({
+    status: 'idle',
+    message: '',
   })
 
   const restaurantName = useMemo(
@@ -150,6 +225,19 @@ export function AdministrationPage() {
     () => tablesState.data.find((table) => table.id === selectedTableId) ?? tablesState.data[0] ?? null,
     [selectedTableId, tablesState.data],
   )
+
+  const tableLayoutCoordinates = useMemo(() => {
+    const xValues = Array.from(new Set(tablesState.data.map((table) => table.posX ?? 0))).sort((a, b) => a - b)
+    const yValues = Array.from(new Set(tablesState.data.map((table) => table.posY ?? 0))).sort((a, b) => a - b)
+    const xIndex = new Map(xValues.map((value, index) => [value, index + 1]))
+    const yIndex = new Map(yValues.map((value, index) => [value, index + 1]))
+
+    return {
+      columns: Math.max(1, xValues.length),
+      xIndex,
+      yIndex,
+    }
+  }, [tablesState.data])
 
   const loadOverview = useCallback(async () => {
     setEstablishmentState({
@@ -182,7 +270,7 @@ export function AdministrationPage() {
     }))
 
     try {
-      const data = await listUsers({})
+      const data = await listUsers({ isActive: true })
       setUsersState({
         status: 'success',
         message: 'Listado de usuarios actualizado.',
@@ -197,6 +285,21 @@ export function AdministrationPage() {
     }
   }, [])
 
+  const resetUserEditForm = useCallback(() => {
+    setEditingUserId(null)
+    setUserEditForm(emptyUserEditForm)
+  }, [])
+
+  const startEditingUser = useCallback((user: AdminUser) => {
+    setEditingUserId(user.id)
+    setUserEditForm({
+      fullName: user.fullName,
+      email: user.email,
+      phone: user.phone ?? '',
+      role: user.role === 'admin' ? 'host' : user.role,
+    })
+  }, [])
+
   const loadTables = useCallback(async () => {
     setTablesState((state) => ({
       ...state,
@@ -208,7 +311,7 @@ export function AdministrationPage() {
       const data = await listTables()
       setTablesState({
         status: 'success',
-        message: 'Mapa de mesas actualizado.',
+        message: 'Distribución de mesas actualizada.',
         data,
       })
     } catch (error) {
@@ -298,18 +401,41 @@ export function AdministrationPage() {
     }
   }, [])
 
+  const loadSnapshots = useCallback(async () => {
+    setSnapshotsState({
+      status: 'loading',
+      message: 'Cargando reportes generados...',
+      data: [],
+    })
+
+    try {
+      const data = await listReportSnapshots()
+      setSnapshotsState({
+        status: 'success',
+        message: 'Reportes generados listos.',
+        data,
+      })
+    } catch (error) {
+      setSnapshotsState({
+        status: 'error',
+        message: getApiErrorMessage(error),
+        data: [],
+      })
+    }
+  }, [])
+
   const loadReports = useCallback(
     async (filters: ReportFilters) => {
-      await Promise.all([
-        loadDailySummary(filters),
-        loadComparison(filters),
-        loadFrequentCustomers(filters),
-      ])
+      await Promise.all([loadDailySummary(filters), loadComparison(filters), loadFrequentCustomers(filters), loadSnapshots()])
     },
-    [loadComparison, loadDailySummary, loadFrequentCustomers],
+    [loadComparison, loadDailySummary, loadFrequentCustomers, loadSnapshots],
   )
 
   useEffect(() => {
+    if (!adminAccessState.unlocked) {
+      return
+    }
+
     const timer = window.setTimeout(() => {
       void loadOverview()
       void loadUsers()
@@ -318,11 +444,36 @@ export function AdministrationPage() {
     }, 0)
 
     return () => window.clearTimeout(timer)
-  }, [loadOverview, loadReports, loadTables, loadUsers])
+  }, [adminAccessState.unlocked, loadOverview, loadReports, loadTables, loadUsers])
+
+  const handleUnlockAdmin = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setAdminAccessState({
+      status: 'loading',
+      message: 'Verificando contraseña de administrador...',
+      unlocked: false,
+    })
+
+    try {
+      await verifyAdminPassword(adminPassword)
+      setAdminPassword('')
+      setAdminAccessState({
+        status: 'success',
+        message: 'Acceso verificado. Bienvenido al panel de administración.',
+        unlocked: true,
+      })
+    } catch (error) {
+      setAdminAccessState({
+        status: 'error',
+        message: getAdminUnlockErrorMessage(error),
+        unlocked: false,
+      })
+    }
+  }
 
   const handleCreateUser = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    setCreateUserState({ status: 'loading', message: 'Creando usuario...' })
+    setCreateUserState({ status: 'loading', message: 'Creando usuario interno...' })
 
     try {
       const payload: CreateInternalUserRequest = omitEmptyString({
@@ -354,7 +505,14 @@ export function AdministrationPage() {
 
     try {
       await deleteUser(user.id)
+      setUsersState((state) => ({
+        ...state,
+        data: state.data.filter((item) => item.id !== user.id),
+      }))
       setUsersActionState({ status: 'success', message: 'Usuario dado de baja.' })
+      if (editingUserId === user.id) {
+        resetUserEditForm()
+      }
       await Promise.all([loadUsers(), loadOverview()])
     } catch (error) {
       setUsersActionState({
@@ -364,21 +522,62 @@ export function AdministrationPage() {
     }
   }
 
-  const handleCreateTables = async (event: FormEvent<HTMLFormElement>) => {
+  const handleUpdateUser = async (event: FormEvent<HTMLFormElement>, userId: string) => {
     event.preventDefault()
-    setTablesActionState({ status: 'loading', message: 'Creando mesas...' })
+    setUsersActionState({ status: 'loading', message: 'Guardando cambios del usuario...' })
 
     try {
-      const payload: CreateTablesBulkRequest = {
-        quantity: parsePositiveInteger(tablesForm.quantity, 1),
-        ...(tablesForm.capacity.trim()
-          ? { capacity: parsePositiveInteger(tablesForm.capacity, 2) }
-          : {}),
-      }
+      const payload: UpdateUserRequest = omitEmptyString({
+        fullName: userEditForm.fullName.trim(),
+        email: userEditForm.email.trim(),
+        phone: userEditForm.phone.trim(),
+        role: userEditForm.role,
+      })
 
-      await createTablesBulk(payload)
-      setTablesForm(emptyTablesForm)
-      setTablesActionState({ status: 'success', message: 'Mesas creadas correctamente.' })
+      const updatedUser = await updateUser(userId, payload)
+      setUsersState((state) => ({
+        ...state,
+        data: state.data.map((item) => (item.id === userId ? updatedUser : item)),
+      }))
+      setUsersActionState({ status: 'success', message: 'Usuario actualizado correctamente.' })
+      resetUserEditForm()
+      await Promise.all([loadUsers(), loadOverview()])
+    } catch (error) {
+      setUsersActionState({
+        status: 'error',
+        message: getApiErrorMessage(error),
+      })
+    }
+  }
+
+  const buildDistributionItems = (form: TablesDistributionForm): TableDistributionItem[] => {
+    const quantity = parsePositiveInteger(form.quantity, 1)
+    const capacity = parsePositiveInteger(form.capacity, 2)
+    const startNumber = parsePositiveInteger(form.startNumber, 1)
+    const columns = parsePositiveInteger(form.columns, 4)
+    const spacingX = parsePositiveInteger(form.spacingX, 120)
+    const spacingY = parsePositiveInteger(form.spacingY, 120)
+    const layoutLabel = form.layoutLabel.trim()
+
+    return Array.from({ length: quantity }, (_, index) => ({
+      tableNumber: startNumber + index,
+      capacity,
+      posX: (index % columns) * spacingX,
+      posY: Math.floor(index / columns) * spacingY,
+      ...(layoutLabel ? { layoutLabel } : {}),
+    }))
+  }
+
+  const handleCreateDistribution = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setTablesActionState({ status: 'loading', message: 'Guardando distribución de mesas...' })
+
+    try {
+      const payload: CreateTablesDistributionRequest = {
+        tables: buildDistributionItems(tablesForm),
+      }
+      await createTablesDistribution(payload)
+      setTablesActionState({ status: 'success', message: 'Distribución de mesas guardada.' })
       await Promise.all([loadTables(), loadOverview()])
     } catch (error) {
       setTablesActionState({
@@ -391,6 +590,25 @@ export function AdministrationPage() {
   const handleRefreshReports = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     await loadReports(reportFilters)
+  }
+
+  const handleDeleteSnapshot = async (snapshot: ReportSnapshot) => {
+    if (!window.confirm(`Eliminar reporte del ${snapshot.reportDate}?`)) {
+      return
+    }
+
+    setSnapshotsActionState({ status: 'loading', message: 'Eliminando reporte...' })
+
+    try {
+      await deleteReportSnapshot(snapshot.id)
+      setSnapshotsActionState({ status: 'success', message: 'Reporte eliminado correctamente.' })
+      await loadSnapshots()
+    } catch (error) {
+      setSnapshotsActionState({
+        status: 'error',
+        message: getApiErrorMessage(error),
+      })
+    }
   }
 
   const overviewCards = [
@@ -421,19 +639,52 @@ export function AdministrationPage() {
     },
   ]
 
-  const maxComparisonValue = Math.max(
-    1,
-    ...comparisonState.data.map((row) => row.reservationsCount),
-  )
+  const maxComparisonValue = Math.max(1, ...comparisonState.data.map((row) => row.reservationsCount))
+
+  if (!adminAccessState.unlocked) {
+    return (
+      <section className="page-stack establishment-page fade-in">
+        <article className="panel form-panel auth-card">
+          <div className="auth-intro">
+            <p className="eyebrow">Acceso protegido</p>
+            <h2>Administrador</h2>
+            <p className="muted">
+              Cada ingreso a esta pantalla solicita tu contraseña de administrador.
+            </p>
+          </div>
+
+          <form className="form-panel" onSubmit={handleUnlockAdmin}>
+            <label>
+              Contraseña de inicio de sesión
+              <input
+                type="password"
+                value={adminPassword}
+                onChange={(event) => setAdminPassword(event.target.value)}
+                autoComplete="current-password"
+                required
+              />
+            </label>
+
+            <button type="submit" className="button button-primary">
+              Verificar contraseña
+            </button>
+          </form>
+
+          <StatusMessage status={adminAccessState.status} message={adminAccessState.message} />
+        </article>
+      </section>
+    )
+  }
 
   return (
     <section className="page-stack establishment-page fade-in">
       <article className="panel establishment-hero">
         <div className="establishment-hero-copy">
           <p className="eyebrow">Panel administrativo</p>
-          <h2>Administración del {restaurantName}</h2>
+          <h2>Administración</h2>
           <p className="lead">{restaurantName}</p>
           <p className="muted">Usuarios, mesas y reportes operativos en un solo lugar.</p>
+          <p className="muted">Nota: la asignación manual de mesas queda para Recepcionista.</p>
         </div>
 
         <div className="summary-grid establishment-overview-grid">
@@ -448,7 +699,7 @@ export function AdministrationPage() {
 
       <StatusMessage status={establishmentState.status} message={establishmentState.message} />
 
-      <div className="admin-tabs" role="tablist" aria-label={`Secciones de Administración del ${restaurantName}`}>
+      <div className="admin-tabs" role="tablist" aria-label="Secciones de Administración">
         {adminTabs.map((tab) => (
           <button
             key={tab.id}
@@ -465,22 +716,19 @@ export function AdministrationPage() {
       </div>
 
       {activeTab === 'usuarios' ? (
-        <div className="two-column-grid">
+        <div className="two-column-grid users-layout-grid">
           <article className="panel form-panel">
             <div className="panel-heading">
               <div>
                 <p className="eyebrow">Usuarios</p>
-                <h3>Crear usuario</h3>
+                <h3>Crear cuenta interna</h3>
               </div>
-              <button type="button" className="button button-secondary" onClick={loadUsers}>
-                Actualizar
-              </button>
             </div>
 
             <form className="form-panel" onSubmit={handleCreateUser}>
               <div className="form-grid">
                 <label>
-                  Nombre completo
+                  Nombre
                   <input
                     value={createUserForm.fullName}
                     onChange={(event) =>
@@ -502,8 +750,7 @@ export function AdministrationPage() {
                       })
                     }
                   >
-                    <option value="customer">Cliente</option>
-                    <option value="host">Host</option>
+                    <option value="host">Recepcionista</option>
                     <option value="manager">Gerente</option>
                   </select>
                 </label>
@@ -511,41 +758,36 @@ export function AdministrationPage() {
 
               <div className="form-grid">
                 <label>
-                  Email
+                  Contraseña
                   <input
-                    type="email"
-                    value={createUserForm.email}
+                    type="password"
+                    value={createUserForm.password}
                     onChange={(event) =>
-                      setCreateUserForm({ ...createUserForm, email: event.target.value })
+                      setCreateUserForm({ ...createUserForm, password: event.target.value })
                     }
-                    autoComplete="email"
+                    autoComplete="new-password"
                     required
                   />
                 </label>
 
                 <label>
-                  Teléfono (opcional)
+                  Email (opcional)
                   <input
-                    type="tel"
-                    value={createUserForm.phone}
-                    onChange={(event) =>
-                      setCreateUserForm({ ...createUserForm, phone: event.target.value })
-                    }
-                    autoComplete="tel"
+                    type="email"
+                    value={createUserForm.email}
+                    onChange={(event) => setCreateUserForm({ ...createUserForm, email: event.target.value })}
+                    autoComplete="email"
                   />
                 </label>
               </div>
 
               <label>
-                Contraseña
+                Teléfono (opcional)
                 <input
-                  type="password"
-                  value={createUserForm.password}
-                  onChange={(event) =>
-                    setCreateUserForm({ ...createUserForm, password: event.target.value })
-                  }
-                  autoComplete="new-password"
-                  required
+                  type="tel"
+                  value={createUserForm.phone}
+                  onChange={(event) => setCreateUserForm({ ...createUserForm, phone: event.target.value })}
+                  autoComplete="tel"
                 />
               </label>
 
@@ -560,50 +802,140 @@ export function AdministrationPage() {
             <div className="panel-heading">
               <div>
                 <p className="eyebrow">Usuarios</p>
-                <h3>Listado de usuarios</h3>
+                <h3>Listado y bajas</h3>
               </div>
-              <button type="button" className="button button-secondary" onClick={loadUsers}>
-                Actualizar
-              </button>
             </div>
 
             <StatusMessage status={usersState.status} message={usersState.message} />
             <StatusMessage status={usersActionState.status} message={usersActionState.message} />
 
-            <div className="table-scroll">
+            <div className="table-scroll users-table-scroll">
               <table>
                 <thead>
                   <tr>
                     <th>Usuario</th>
                     <th>Rol</th>
                     <th>Estado</th>
-                    <th>Último ingreso</th>
+                    <th>Ultimo ingreso</th>
                     <th>Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
                   {usersState.data.length ? (
                     usersState.data.map((user) => (
-                      <tr key={user.id}>
-                        <td>
-                          <strong>{user.fullName}</strong>
-                          <div className="subtle">{user.email}</div>
-                          <div className="subtle">{user.phone ?? 'Sin teléfono'}</div>
-                        </td>
-                        <td>{formatUserRole(user.role)}</td>
-                        <td>{user.isActive ? 'Activo' : 'Inactivo'}</td>
-                        <td>{formatDateTime(user.lastLoginAt)}</td>
-                        <td>
-                          <button
-                            type="button"
-                            className="button button-ghost button-tight"
-                            onClick={() => handleDeleteUser(user)}
-                            disabled={!user.isActive}
-                          >
-                            {user.isActive ? 'Dar de baja' : 'Baja aplicada'}
-                          </button>
-                        </td>
-                      </tr>
+                      <Fragment key={user.id}>
+                        <tr>
+                          <td>
+                            <strong>{user.fullName}</strong>
+                            <div className="subtle">{user.email}</div>
+                            <div className="subtle">{user.phone ?? 'Sin teléfono'}</div>
+                          </td>
+                          <td>{formatUserRole(user.role)}</td>
+                          <td>{user.isActive ? 'Activo' : 'Inactivo'}</td>
+                          <td>{formatDateTime(user.lastLoginAt)}</td>
+                          <td>
+                            <div className="user-actions">
+                              <button
+                                type="button"
+                                className="button button-secondary button-icon button-icon-edit"
+                                onClick={() => startEditingUser(user)}
+                                aria-label="Editar usuario"
+                              >
+                                <img className="button-icon-image" src={editIcon} alt="" aria-hidden="true" />
+                              </button>
+                              <button
+                                type="button"
+                                className="button button-ghost button-icon button-icon-delete"
+                                onClick={() => handleDeleteUser(user)}
+                                disabled={!user.isActive}
+                                aria-label="Dar de baja usuario"
+                              >
+                                <img className="button-icon-image" src={deleteIcon} alt="" aria-hidden="true" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                        {editingUserId === user.id ? (
+                          <tr className="user-edit-row">
+                            <td colSpan={5}>
+                              <form className="form-panel user-edit-form" onSubmit={(event) => void handleUpdateUser(event, user.id)}>
+                                <div className="form-grid">
+                                  <label>
+                                    Nombre
+                                    <input
+                                      value={userEditForm.fullName}
+                                      onChange={(event) =>
+                                        setUserEditForm({ ...userEditForm, fullName: event.target.value })
+                                      }
+                                      autoComplete="name"
+                                      required
+                                    />
+                                  </label>
+
+                                  <label>
+                                    Rol
+                                    <select
+                                      value={userEditForm.role}
+                                      onChange={(event) =>
+                                        setUserEditForm({
+                                          ...userEditForm,
+                                          role: event.target.value as EditableUserRole,
+                                        })
+                                      }
+                                    >
+                                      {editableUserRoles.map((option) => (
+                                        <option key={option.value} value={option.value}>
+                                          {option.label}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </label>
+                                </div>
+
+                                <div className="form-grid">
+                                  <label>
+                                    Email (opcional)
+                                    <input
+                                      type="email"
+                                      value={userEditForm.email}
+                                      onChange={(event) =>
+                                        setUserEditForm({ ...userEditForm, email: event.target.value })
+                                      }
+                                      autoComplete="email"
+                                    />
+                                  </label>
+
+                                  <label>
+                                    Teléfono (opcional)
+                                    <input
+                                      type="tel"
+                                      value={userEditForm.phone}
+                                      onChange={(event) =>
+                                        setUserEditForm({ ...userEditForm, phone: event.target.value })
+                                      }
+                                      autoComplete="tel"
+                                    />
+                                  </label>
+                                </div>
+
+                                <div className="button-row">
+                                  <button type="submit" className="button button-primary button-tight">
+                                    Guardar cambios
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="button button-ghost button-tight"
+                                    onClick={resetUserEditForm}
+                                  >
+                                    Cancelar
+                                  </button>
+                                </div>
+
+                              </form>
+                            </td>
+                          </tr>
+                        ) : null}
+                      </Fragment>
                     ))
                   ) : (
                     <tr>
@@ -623,14 +955,14 @@ export function AdministrationPage() {
             <div className="panel-heading">
               <div>
                 <p className="eyebrow">Mesas</p>
-                <h3>Alta masiva</h3>
+                <h3>Crear distribución</h3>
               </div>
               <button type="button" className="button button-secondary" onClick={loadTables}>
                 Actualizar
               </button>
             </div>
 
-            <form className="form-panel" onSubmit={handleCreateTables}>
+            <form className="form-panel" onSubmit={handleCreateDistribution}>
               <div className="form-grid">
                 <label>
                   Cantidad de mesas
@@ -638,32 +970,81 @@ export function AdministrationPage() {
                     type="number"
                     min={1}
                     value={tablesForm.quantity}
-                    onChange={(event) =>
-                      setTablesForm({ ...tablesForm, quantity: event.target.value })
-                    }
+                    onChange={(event) => setTablesForm({ ...tablesForm, quantity: event.target.value })}
                     required
                   />
                 </label>
 
                 <label>
-                  Capacidad inicial (opcional)
+                  Capacidad por mesa
                   <input
                     type="number"
                     min={1}
                     value={tablesForm.capacity}
-                    onChange={(event) =>
-                      setTablesForm({ ...tablesForm, capacity: event.target.value })
-                    }
+                    onChange={(event) => setTablesForm({ ...tablesForm, capacity: event.target.value })}
+                    required
                   />
                 </label>
               </div>
 
-              <p className="muted">
-                Si no indicás capacidad, las mesas nuevas nacen con 2 plazas.
-              </p>
+              <div className="form-grid">
+                <label>
+                  Número inicial de mesa
+                  <input
+                    type="number"
+                    min={1}
+                    value={tablesForm.startNumber}
+                    onChange={(event) => setTablesForm({ ...tablesForm, startNumber: event.target.value })}
+                    required
+                  />
+                </label>
+
+                <label>
+                  Etiqueta de sector
+                  <input
+                    value={tablesForm.layoutLabel}
+                    onChange={(event) => setTablesForm({ ...tablesForm, layoutLabel: event.target.value })}
+                  />
+                </label>
+              </div>
+
+              <div className="form-grid">
+                <label>
+                  Columnas del mapa
+                  <input
+                    type="number"
+                    min={1}
+                    value={tablesForm.columns}
+                    onChange={(event) => setTablesForm({ ...tablesForm, columns: event.target.value })}
+                    required
+                  />
+                </label>
+
+                <label>
+                  Separación X (px)
+                  <input
+                    type="number"
+                    min={1}
+                    value={tablesForm.spacingX}
+                    onChange={(event) => setTablesForm({ ...tablesForm, spacingX: event.target.value })}
+                    required
+                  />
+                </label>
+              </div>
+
+              <label>
+                Separación Y (px)
+                <input
+                  type="number"
+                  min={1}
+                  value={tablesForm.spacingY}
+                  onChange={(event) => setTablesForm({ ...tablesForm, spacingY: event.target.value })}
+                  required
+                />
+              </label>
 
               <button type="submit" className="button button-primary">
-                Crear mesas
+                Guardar distribución
               </button>
               <StatusMessage status={tablesActionState.status} message={tablesActionState.message} />
             </form>
@@ -680,22 +1061,28 @@ export function AdministrationPage() {
 
               <StatusMessage status={tablesState.status} message={tablesState.message} />
 
-              <div className="table-map">
+              <div
+                className="table-map"
+                style={{
+                  gridTemplateColumns: `repeat(${tableLayoutCoordinates.columns}, minmax(130px, 1fr))`,
+                }}
+              >
                 {tablesState.data.length ? (
                   tablesState.data.map((table) => (
                     <button
                       key={table.id}
                       type="button"
-                      className={
-                        (selectedTableId || tablesState.data[0]?.id) === table.id
-                          ? 'table-card table-card-active'
-                          : 'table-card'
-                      }
+                      className={(selectedTableId || tablesState.data[0]?.id) === table.id ? 'table-card table-card-active' : 'table-card'}
+                      style={{
+                        gridColumn: tableLayoutCoordinates.xIndex.get(table.posX ?? 0) ?? 1,
+                        gridRow: tableLayoutCoordinates.yIndex.get(table.posY ?? 0) ?? 1,
+                      }}
                       onClick={() => setSelectedTableId(table.id)}
                     >
                       <p className="eyebrow">Mesa {table.tableNumber}</p>
                       <h3>{table.capacity} plazas</h3>
-                      <p className="muted">{table.isActive ? 'Activa' : 'Inactiva'}</p>
+                      <p className="muted">ID: {table.id.slice(0, 8)}</p>
+                      <p className="muted">{table.layoutLabel ?? 'Sin sector'}</p>
                     </button>
                   ))
                 ) : (
@@ -717,6 +1104,8 @@ export function AdministrationPage() {
                   <p className="eyebrow">Mesa {selectedTable.tableNumber}</p>
                   <h3>{selectedTable.capacity} plazas</h3>
                   <p className="muted">ID: {selectedTable.id}</p>
+                  <p className="muted">Posición: ({selectedTable.posX ?? 0}, {selectedTable.posY ?? 0})</p>
+                  <p className="muted">Sector: {selectedTable.layoutLabel ?? 'Sin sector'}</p>
                   <p className="muted">Estado: {selectedTable.isActive ? 'Activa' : 'Inactiva'}</p>
                 </div>
               ) : (
@@ -730,6 +1119,7 @@ export function AdministrationPage() {
                       <th>ID</th>
                       <th>Número</th>
                       <th>Capacidad</th>
+                      <th>Posición</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -739,11 +1129,12 @@ export function AdministrationPage() {
                           <td className="subtle">{table.id}</td>
                           <td>{table.tableNumber}</td>
                           <td>{table.capacity}</td>
+                          <td>{table.posX ?? 0}, {table.posY ?? 0}</td>
                         </tr>
                       ))
                     ) : (
                       <tr>
-                        <td colSpan={3}>Sin mesas para mostrar.</td>
+                        <td colSpan={4}>Sin mesas para mostrar.</td>
                       </tr>
                     )}
                   </tbody>
@@ -774,9 +1165,7 @@ export function AdministrationPage() {
                   <input
                     type="date"
                     value={reportFilters.date}
-                    onChange={(event) =>
-                      setReportFilters({ ...reportFilters, date: event.target.value })
-                    }
+                    onChange={(event) => setReportFilters({ ...reportFilters, date: event.target.value })}
                   />
                 </label>
 
@@ -787,9 +1176,7 @@ export function AdministrationPage() {
                     min={1}
                     max={30}
                     value={reportFilters.days}
-                    onChange={(event) =>
-                      setReportFilters({ ...reportFilters, days: event.target.value })
-                    }
+                    onChange={(event) => setReportFilters({ ...reportFilters, days: event.target.value })}
                   />
                 </label>
               </div>
@@ -801,9 +1188,7 @@ export function AdministrationPage() {
                     type="number"
                     min={1}
                     value={reportFilters.minVisits}
-                    onChange={(event) =>
-                      setReportFilters({ ...reportFilters, minVisits: event.target.value })
-                    }
+                    onChange={(event) => setReportFilters({ ...reportFilters, minVisits: event.target.value })}
                   />
                 </label>
 
@@ -813,9 +1198,7 @@ export function AdministrationPage() {
                     type="number"
                     min={1}
                     value={reportFilters.limit}
-                    onChange={(event) =>
-                      setReportFilters({ ...reportFilters, limit: event.target.value })
-                    }
+                    onChange={(event) => setReportFilters({ ...reportFilters, limit: event.target.value })}
                   />
                 </label>
               </div>
@@ -939,6 +1322,62 @@ export function AdministrationPage() {
                   ) : (
                     <tr>
                       <td colSpan={4}>Sin datos para mostrar.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </article>
+
+          <article className="panel report-panel">
+            <div className="panel-heading">
+              <div>
+                <p className="eyebrow">Reportes</p>
+                <h3>Reportes generados</h3>
+              </div>
+              <button type="button" className="button button-secondary" onClick={loadSnapshots}>
+                Actualizar
+              </button>
+            </div>
+
+            <StatusMessage status={snapshotsState.status} message={snapshotsState.message} />
+            <StatusMessage status={snapshotsActionState.status} message={snapshotsActionState.message} />
+
+            <div className="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Fecha</th>
+                    <th>Reservas</th>
+                    <th>Asistencias</th>
+                    <th>% asistencia</th>
+                    <th>Origen</th>
+                    <th>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {snapshotsState.data.length ? (
+                    snapshotsState.data.map((snapshot) => (
+                      <tr key={snapshot.id}>
+                        <td>{snapshot.reportDate}</td>
+                        <td>{snapshot.reservationsCount}</td>
+                        <td>{snapshot.attendedCount}</td>
+                        <td>{formatPercent(snapshot.attendancePercent)}</td>
+                        <td>{snapshot.source}</td>
+                        <td>
+                          <button
+                            type="button"
+                            className="button button-ghost button-tight"
+                            onClick={() => handleDeleteSnapshot(snapshot)}
+                          >
+                            Eliminar
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={6}>No hay reportes generados todavía.</td>
                     </tr>
                   )}
                 </tbody>
