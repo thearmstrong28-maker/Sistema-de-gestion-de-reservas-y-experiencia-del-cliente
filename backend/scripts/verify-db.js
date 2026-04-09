@@ -25,6 +25,7 @@ const REQUIRED_OBJECTS = [
   'public.audit_log',
   'public.user_classes',
   'public.daily_shift_occupancy',
+  'public.daily_establishment_report',
   'public.frequent_customers',
   'public.ux_reservations_active_customer_shift',
   'public.ix_reservations_date_shift_status',
@@ -113,6 +114,7 @@ async function main() {
       `
         SELECT
           (SELECT COUNT(*) FROM users WHERE email = 'admin@local.test') AS admin_users,
+          (SELECT restaurant_name FROM users WHERE email = 'admin@local.test') AS admin_restaurant_name,
           (SELECT password_hash FROM users WHERE email = 'admin@local.test') AS admin_password_hash,
           (SELECT COUNT(*) FROM shifts) AS shifts_count,
           (SELECT COUNT(*) FROM restaurant_tables) AS tables_count,
@@ -136,6 +138,11 @@ async function main() {
       !/^\$2[aby]\$/.test(seedRow.admin_password_hash)
     ) {
       throw new Error('admin seed password hash is missing or invalid');
+    }
+    if (seedRow.admin_restaurant_name !== 'Restaurante principal') {
+      throw new Error(
+        `admin seed restaurant_name expected "Restaurante principal", got ${seedRow.admin_restaurant_name}`,
+      );
     }
     results.push({ name: 'seed data present', ok: true, detail: 'admin user, shifts, tables, and user classes found' });
 

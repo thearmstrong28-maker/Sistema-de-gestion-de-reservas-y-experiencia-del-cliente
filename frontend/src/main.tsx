@@ -4,7 +4,7 @@ import { BrowserRouter } from 'react-router-dom'
 import './index.css'
 import App from './App.tsx'
 
-document.title = 'Sistema de reservas | Inicio y administración'
+document.title = 'Sistema de reservas y experiencia del cliente'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

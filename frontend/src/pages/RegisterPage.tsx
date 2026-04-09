@@ -68,7 +68,7 @@ export function RegisterPage() {
   })
 
   const onSubmit = async (values: RegisterFormValues) => {
-    setSubmitState({ status: 'loading', message: 'Creando la cuenta...' })
+    setSubmitState({ status: 'loading', message: 'Creando la cuenta administradora del restaurante...' })
 
     try {
       await register({
@@ -81,7 +81,7 @@ export function RegisterPage() {
       reset(emptyForm)
       setSubmitState({
         status: 'success',
-        message: 'Cuenta creada correctamente. Ya podés iniciar sesión.',
+        message: 'Cuenta administradora creada correctamente. Ya podés iniciar sesión e ir a Administración.',
       })
     } catch (error) {
       setSubmitState({ status: 'error', message: getApiErrorMessage(error) })
@@ -94,7 +94,7 @@ export function RegisterPage() {
         <div className="auth-intro">
           <h2>Crear cuenta</h2>
           <p className="muted">
-            Completá los datos de tu restaurante para activar el acceso al sistema.
+            Completá los datos de tu restaurante para crear la administración inicial del sistema.
           </p>
         </div>
 
@@ -177,7 +177,7 @@ export function RegisterPage() {
             className="button button-primary"
             disabled={submitState.status === 'loading'}
           >
-            Crear cuenta
+            Crear administración
           </button>
 
           <StatusMessage status={submitState.status} message={submitState.message} />

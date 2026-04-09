@@ -15,14 +15,18 @@ import { ALL_ROLES } from './enums/role.enum';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 import type { AuthenticatedUser } from './interfaces/authenticated-user.interface';
-import { AuthService } from './auth.service';
+import {
+  AuthService,
+  type PublicUser,
+  type PublicUserClass,
+} from './auth.service';
 
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('register')
-  register(@Body() registerDto: RegisterDto) {
+  register(@Body() registerDto: RegisterDto): Promise<PublicUser> {
     return this.authService.register(registerDto);
   }
 
@@ -51,7 +55,7 @@ export class AuthController {
   }
 
   @Get('user-classes')
-  getUserClasses() {
+  getUserClasses(): Promise<PublicUserClass[]> {
     return this.authService.getUserClasses();
   }
 

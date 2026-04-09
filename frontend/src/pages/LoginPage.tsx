@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { fetchMe, login } from '../api/auth'
 import { getApiErrorMessage } from '../api/http'
@@ -14,9 +14,6 @@ const emptyForm = {
 
 export function LoginPage() {
   const navigate = useNavigate()
-  const token = useAuthStore((state) => state.token)
-  const profile = useAuthStore((state) => state.profile)
-  const status = useAuthStore((state) => state.status)
   const setToken = useAuthStore((state) => state.setToken)
   const setProfile = useAuthStore((state) => state.setProfile)
   const setStatus = useAuthStore((state) => state.setStatus)
@@ -26,14 +23,6 @@ export function LoginPage() {
     status: 'idle',
     message: '',
   })
-  const profileRole = profile?.role
-
-  useEffect(() => {
-    if (token && status === 'ready') {
-      navigate(profileRole === 'admin' ? '/admin' : '/', { replace: true })
-    }
-  }, [navigate, profileRole, status, token])
-
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setAuthState({ status: 'loading', message: 'Validando credenciales...' })
@@ -50,7 +39,7 @@ export function LoginPage() {
       setProfile(currentProfile)
       setStatus('ready')
       setAuthState({ status: 'success', message: 'Ingreso correcto.' })
-      navigate(currentProfile.role === 'admin' ? '/admin' : '/', { replace: true })
+      navigate(currentProfile.role === 'admin' ? '/administracion' : '/', { replace: true })
     } catch (error) {
       clearSession()
       setAuthState({ status: 'error', message: getApiErrorMessage(error) })
@@ -63,13 +52,13 @@ export function LoginPage() {
         <div>
           <h2>Iniciar sesión</h2>
           <p className="muted">
-            Ingresá con la cuenta de tu restaurante para continuar.
+            Ingresá con la cuenta administradora de tu restaurante para continuar.
           </p>
         </div>
 
         <form className="form-panel" onSubmit={handleSubmit}>
           <label>
-            Email
+            Correo electrónico
             <input
               type="email"
               value={form.email}
@@ -98,7 +87,7 @@ export function LoginPage() {
 
           <div className="auth-links">
             <Link className="button button-secondary" to="/registro">
-              Crear una cuenta
+              Crear administración
             </Link>
           </div>
         </form>

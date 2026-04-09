@@ -17,7 +17,7 @@ export function HomePage() {
               Iniciar sesión
             </Link>
             <Link className="button button-secondary" to="/registro">
-              Registrarse
+              Crear administración
             </Link>
           </div>
         </div>

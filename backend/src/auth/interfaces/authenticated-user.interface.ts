@@ -5,4 +5,5 @@ export interface AuthenticatedUser {
   email: string;
   role: Role;
   fullName: string;
+  restaurantName: string | null;
 }

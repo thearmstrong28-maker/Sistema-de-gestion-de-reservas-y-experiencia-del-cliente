@@ -38,7 +38,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     });
 
     if (!user || !user.isActive) {
-      throw new UnauthorizedException('Invalid token');
+      throw new UnauthorizedException('Token inválido');
     }
 
     return {
@@ -46,6 +46,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       email: user.email,
       role: user.role,
       fullName: user.fullName,
+      restaurantName: user.restaurantName ?? null,
     };
   }
 }

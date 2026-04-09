@@ -42,12 +42,13 @@ describe('Auth register (e2e)', () => {
     await app?.close();
   });
 
-  it('persists register payload fields and hashes the password', async () => {
-    const email = `registro-${Date.now()}-${Math.random().toString(16).slice(2)}@example.test`;
+  it('creates the initial restaurant administrator and hashes the password', async () => {
+    const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const email = `registro-${suffix}@example.test`;
     const payload = {
       email,
       phone: '+54 9 11 5555-4444',
-      restaurantName: 'Casa del Sabor',
+      restaurantName: `Casa del Sabor ${suffix}`,
       password: 'StrongP@ss1',
     };
 
@@ -55,47 +56,97 @@ describe('Auth register (e2e)', () => {
       typeof request
     >[0];
 
-    const response = await request(httpServer)
-      .post('/auth/register')
-      .send(payload)
-      .expect(201);
+    try {
+      const response = await request(httpServer)
+        .post('/auth/register')
+        .send(payload)
+        .expect(201);
 
-    expect(response.body).toEqual(
-      expect.objectContaining({
-        email: email.toLowerCase(),
-        fullName: payload.restaurantName,
-        restaurantName: payload.restaurantName,
-        phone: payload.phone,
-        role: 'customer',
-        isActive: true,
-      }),
-    );
+      expect(response.body).toEqual(
+        expect.objectContaining({
+          email: email.toLowerCase(),
+          fullName: payload.restaurantName,
+          restaurantName: payload.restaurantName,
+          phone: payload.phone,
+          role: 'admin',
+          isActive: true,
+        }),
+      );
 
-    const rows = await dataSource.query(
-      `
-        SELECT email, phone, restaurant_name, password_hash, full_name, role, is_active
-        FROM users
-        WHERE email = $1
-      `,
-      [email.toLowerCase()],
-    );
+      const rows = await dataSource.query(
+        `
+          SELECT email, phone, restaurant_name, password_hash, full_name, role, is_active
+          FROM users
+          WHERE email = $1
+        `,
+        [email.toLowerCase()],
+      );
 
-    expect(rows).toHaveLength(1);
+      expect(rows).toHaveLength(1);
 
-    const row: RegisteredUserRow = rows[0];
+      const row: RegisteredUserRow = rows[0];
 
-    expect(row).toEqual(
-      expect.objectContaining({
-        email: email.toLowerCase(),
-        phone: payload.phone,
-        restaurant_name: payload.restaurantName,
-        full_name: payload.restaurantName,
-        role: 'customer',
-        is_active: true,
-      }),
-    );
-    expect(row.password_hash).not.toBe(payload.password);
-    expect(row.password_hash).toMatch(/^\$2[aby]\$/);
-    expect(row.password_hash.length).toBeGreaterThan(payload.password.length);
+      expect(row).toEqual(
+        expect.objectContaining({
+          email: email.toLowerCase(),
+          phone: payload.phone,
+          restaurant_name: payload.restaurantName,
+          full_name: payload.restaurantName,
+          role: 'admin',
+          is_active: true,
+        }),
+      );
+      expect(row.password_hash).not.toBe(payload.password);
+      expect(row.password_hash).toMatch(/^\$2[aby]\$/);
+      expect(row.password_hash.length).toBeGreaterThan(payload.password.length);
+    } finally {
+      await dataSource.query('DELETE FROM users WHERE email = $1', [
+        email.toLowerCase(),
+      ]);
+    }
+  });
+
+  it('rejects a second active admin for the same restaurant', async () => {
+    const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const email = `registro-conflicto-${suffix}@example.test`;
+    const payload = {
+      email,
+      phone: '+54 9 11 5555-4444',
+      restaurantName: `Casa del Sabor ${suffix}`,
+      password: 'StrongP@ss1',
+    };
+
+    const httpServer = app.getHttpServer() as unknown as Parameters<
+      typeof request
+    >[0];
+
+    await request(httpServer).post('/auth/register').send(payload).expect(201);
+
+    const duplicateEmail = `registro-conflicto-dup-${suffix}@example.test`;
+
+    try {
+      const conflictResponse = await request(httpServer)
+        .post('/auth/register')
+        .send({
+          email: duplicateEmail,
+          phone: '+54 9 11 5555-4444',
+          restaurantName: payload.restaurantName,
+          password: 'StrongP@ss1',
+        })
+        .expect(409);
+
+      expect(conflictResponse.body).toEqual(
+        expect.objectContaining({
+          message: expect.stringContaining(
+            'Ya existe un administrador activo para este restaurante',
+          ),
+        }),
+      );
+    } finally {
+      await dataSource.query('DELETE FROM users WHERE email IN ($1, $2)', [
+        email.toLowerCase(),
+        duplicateEmail.toLowerCase(),
+      ]);
+    }
   });
 });

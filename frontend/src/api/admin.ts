@@ -1,10 +1,55 @@
 import { api } from './http'
-import type { AdminUser, CreateInternalUserRequest, ListUsersQuery } from './types'
+import type {
+  AdminUser,
+  DailyComparisonQuery,
+  DailyComparisonRow,
+  DailyReportSummary,
+  DailySummaryQuery,
+  CreateInternalUserRequest,
+  CreateTablesBulkRequest,
+  EstablishmentSummary,
+  ListUsersQuery,
+  RestaurantTable,
+  FrequentCustomerRow,
+  FrequentCustomersQuery,
+} from './types'
+
+export const fetchEstablishmentSummary = async (): Promise<EstablishmentSummary> => {
+  const { data } = await api.get<EstablishmentSummary>('/establishment')
+  return data
+}
 
 export const createInternalUser = async (
   payload: CreateInternalUserRequest,
 ): Promise<AdminUser> => {
   const { data } = await api.post<AdminUser>('/users/internal', payload)
+  return data
+}
+
+export const fetchDailyReportSummary = async (
+  query: DailySummaryQuery,
+): Promise<DailyReportSummary> => {
+  const { data } = await api.get<DailyReportSummary>('/reports/daily-summary', {
+    params: query,
+  })
+  return data
+}
+
+export const fetchDailyReportComparison = async (
+  query: DailyComparisonQuery,
+): Promise<DailyComparisonRow[]> => {
+  const { data } = await api.get<DailyComparisonRow[]>('/reports/daily-comparison', {
+    params: query,
+  })
+  return data
+}
+
+export const fetchFrequentCustomers = async (
+  query: FrequentCustomersQuery,
+): Promise<FrequentCustomerRow[]> => {
+  const { data } = await api.get<FrequentCustomerRow[]>('/reports/frequent-customers', {
+    params: query,
+  })
   return data
 }
 
@@ -15,5 +60,17 @@ export const listUsers = async (query: ListUsersQuery): Promise<AdminUser[]> => 
 
 export const deleteUser = async (id: string): Promise<AdminUser> => {
   const { data } = await api.delete<AdminUser>(`/users/${id}`)
+  return data
+}
+
+export const listTables = async (): Promise<RestaurantTable[]> => {
+  const { data } = await api.get<RestaurantTable[]>('/establishment/tables')
+  return data
+}
+
+export const createTablesBulk = async (
+  payload: CreateTablesBulkRequest,
+): Promise<RestaurantTable[]> => {
+  const { data } = await api.post<RestaurantTable[]>('/establishment/tables/bulk', payload)
   return data
 }

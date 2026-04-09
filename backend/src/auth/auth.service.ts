@@ -1,6 +1,5 @@
 import {
   ConflictException,
-  ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -8,7 +7,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import bcrypt from 'bcrypt';
-import { Repository } from 'typeorm';
+import { DataSource, ILike, Repository } from 'typeorm';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { UserClassEntity } from './entities/user-class.entity';
@@ -17,7 +16,7 @@ import { Role } from './enums/role.enum';
 
 type JwtExpiresIn = `${number}${'ms' | 's' | 'm' | 'h' | 'd' | 'w' | 'y'}`;
 
-interface PublicUser {
+export interface PublicUser {
   id: string;
   email: string;
   fullName: string;
@@ -29,7 +28,7 @@ interface PublicUser {
   updatedAt: Date;
 }
 
-interface PublicUserClass {
+export interface PublicUserClass {
   id: string;
   code: string;
   displayName: string;
@@ -52,69 +51,107 @@ export class AuthService {
     private readonly userClassRepository: Repository<UserClassEntity>,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly dataSource: DataSource,
   ) {}
 
   async register(registerDto: RegisterDto): Promise<PublicUser> {
-    const role = registerDto.role ?? Role.Customer;
-
-    if (role !== Role.Customer) {
-      throw new ForbiddenException(
-        'Only customer self-registration is allowed',
-      );
-    }
-
     const email = this.normalizeEmail(registerDto.email);
-    const existingUser = await this.userRepository.findOne({
-      where: { email },
-    });
-
-    if (existingUser) {
-      throw new ConflictException('Email already registered');
-    }
-
+    const restaurantName = registerDto.restaurantName.trim();
+    const restaurantNameKey = restaurantName.toLowerCase();
     const passwordHash = await bcrypt.hash(
       registerDto.password,
       this.bcryptRounds,
     );
-    const restaurantName = registerDto.restaurantName.trim();
     const phone = registerDto.phone.trim();
-    const user = this.userRepository.create({
-      email,
-      passwordHash,
-      fullName: restaurantName,
-      restaurantName,
-      phone,
-      role,
-      isActive: true,
-    });
 
-    try {
-      const savedUser = await this.userRepository.save(user);
-      return this.toPublicUser(savedUser);
-    } catch (error) {
-      if (this.isUniqueEmailViolation(error)) {
-        throw new ConflictException('Email already registered');
+    return this.dataSource.transaction(async (manager) => {
+      await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+        restaurantNameKey,
+      ]);
+
+      const transactionRepository = manager.getRepository(UserEntity);
+      const existingUser = await transactionRepository.findOne({
+        where: { email },
+      });
+
+      if (existingUser) {
+        throw new ConflictException('El correo electrónico ya está registrado');
       }
 
-      throw error;
-    }
+      const existingRestaurantAdmin = await transactionRepository.findOne({
+        where: {
+          restaurantName: ILike(restaurantName),
+          role: Role.Admin,
+          isActive: true,
+        },
+      });
+
+      if (existingRestaurantAdmin) {
+        throw new ConflictException(
+          'Ya existe un administrador activo para este restaurante. El registro público no permite crear otra cuenta administradora.',
+        );
+      }
+
+      const user = transactionRepository.create({
+        email,
+        passwordHash,
+        fullName: restaurantName,
+        restaurantName,
+        phone,
+        role: Role.Admin,
+        isActive: true,
+      });
+
+      const savedUser = await transactionRepository.save(user);
+      return this.toPublicUser(savedUser);
+    });
   }
 
   async login(
     loginDto: LoginDto,
   ): Promise<{ accessToken: string; refreshToken: string }> {
-    const user = await this.findActiveUserByEmail(loginDto.email);
-    const passwordMatches = await bcrypt.compare(
-      loginDto.password,
-      user.passwordHash,
-    );
+    const user = await this.dataSource.transaction(async (manager) => {
+      const transactionRepository = manager.getRepository(UserEntity);
+      const authenticatedUser = await this.findActiveUserByEmailFromRepository(
+        transactionRepository,
+        loginDto.email,
+      );
+      const passwordMatches = await bcrypt.compare(
+        loginDto.password,
+        authenticatedUser.passwordHash,
+      );
 
-    if (!passwordMatches) {
-      throw new UnauthorizedException('Invalid credentials');
-    }
+      if (!passwordMatches) {
+        throw new UnauthorizedException('Credenciales inválidas');
+      }
 
-    await this.userRepository.update(user.id, {
-      lastLoginAt: new Date(),
+      const shouldBootstrapAdmin =
+        this.shouldBootstrapRestaurantAdmin(authenticatedUser);
+
+      if (shouldBootstrapAdmin) {
+        await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+          this.getRestaurantNameKey(authenticatedUser.restaurantName),
+        ]);
+
+        const existingActiveAdmin = await transactionRepository.findOne({
+          where: {
+            restaurantName: ILike(
+              authenticatedUser.restaurantName?.trim() ?? '',
+            ),
+            role: Role.Admin,
+            isActive: true,
+          },
+        });
+
+        if (!existingActiveAdmin) {
+          authenticatedUser.role = Role.Admin;
+        }
+      }
+
+      return transactionRepository.save({
+        ...authenticatedUser,
+        lastLoginAt: new Date(),
+      });
     });
 
     const { accessToken, refreshToken } = await this.generateTokens(user);
@@ -124,7 +161,7 @@ export class AuthService {
 
   async refresh(refreshToken?: string): Promise<{ accessToken: string }> {
     if (!refreshToken) {
-      throw new UnauthorizedException('Refresh token is required');
+      throw new UnauthorizedException('El token de renovación es obligatorio');
     }
 
     try {
@@ -142,7 +179,7 @@ export class AuthService {
       const { accessToken } = await this.generateTokens(user);
       return { accessToken };
     } catch {
-      throw new UnauthorizedException('Invalid refresh token');
+      throw new UnauthorizedException('Token de renovación inválido');
     }
   }
 
@@ -157,24 +194,35 @@ export class AuthService {
       .map((userClass) => this.toPublicUserClass(userClass));
   }
 
-  private async findActiveUserByEmail(email: string): Promise<UserEntity> {
+  private async findActiveUserByEmailFromRepository(
+    repository: Pick<Repository<UserEntity>, 'findOne'>,
+    email: string,
+  ): Promise<UserEntity> {
     const normalizedEmail = this.normalizeEmail(email);
-    const user = await this.userRepository.findOne({
+    const user = await repository.findOne({
       where: { email: normalizedEmail },
     });
 
     if (!user || !user.isActive) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw new UnauthorizedException('Credenciales inválidas');
     }
 
     return user;
+  }
+
+  private shouldBootstrapRestaurantAdmin(user: UserEntity): boolean {
+    return Boolean(user.restaurantName?.trim()) && user.role === Role.Customer;
+  }
+
+  private getRestaurantNameKey(restaurantName?: string | null): string {
+    return restaurantName?.trim().toLowerCase() ?? '';
   }
 
   private async findActiveUserById(id: string): Promise<UserEntity> {
     const user = await this.userRepository.findOne({ where: { id } });
 
     if (!user || !user.isActive) {
-      throw new UnauthorizedException('Invalid refresh token');
+      throw new UnauthorizedException('Token de renovación inválido');
     }
 
     return user;
@@ -259,14 +307,5 @@ export class AuthService {
       role: userClass.role,
       isActive: userClass.isActive,
     };
-  }
-
-  private isUniqueEmailViolation(error: unknown): boolean {
-    if (typeof error !== 'object' || error === null) {
-      return false;
-    }
-
-    const driverError = error as { driverError?: { code?: string } };
-    return driverError.driverError?.code === '23505';
   }
 }

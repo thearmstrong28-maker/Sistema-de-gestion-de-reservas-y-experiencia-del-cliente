@@ -43,6 +43,57 @@ describe('ReportsService', () => {
     expect(rows[0].occupancyPercent).toBe(70);
   });
 
+  it('reads daily summary and keeps zero values when there is no data', async () => {
+    dataSource.query.mockResolvedValueOnce([]);
+
+    const row = await service.getDailySummary(
+      { restaurantName: 'Restaurante principal' } as never,
+      { date: new Date('2026-04-06T00:00:00.000Z') },
+    );
+
+    expect(dataSource.query).toHaveBeenCalled();
+    expect(row).toEqual(
+      expect.objectContaining({
+        restaurantName: 'Restaurante principal',
+        reportDate: '2026-04-06',
+        reservationsCount: 0,
+        attendedCount: 0,
+        customerCount: 0,
+        noShowCount: 0,
+      }),
+    );
+  });
+
+  it('reads daily comparison view', async () => {
+    dataSource.query.mockResolvedValue([
+      {
+        reportDate: '2026-04-04',
+        reservationsCount: '12',
+        attendedCount: '9',
+        customerCount: '8',
+        noShowCount: '1',
+        attendancePercent: '75',
+      },
+    ]);
+
+    const rows = await service.getDailyComparison(
+      { restaurantName: 'Restaurante principal' } as never,
+      { days: 7 },
+    );
+
+    expect(dataSource.query).toHaveBeenCalled();
+    expect(rows[0]).toEqual(
+      expect.objectContaining({
+        reportDate: '2026-04-04',
+        reservationsCount: 12,
+        attendedCount: 9,
+        customerCount: 8,
+        noShowCount: 1,
+        attendancePercent: 75,
+      }),
+    );
+  });
+
   it('reads frequent customers view with min visits and limit', async () => {
     dataSource.query.mockResolvedValue([
       {

@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
+import { EstablishmentModule } from './establishment/establishment.module';
 import { CustomersModule } from './customers/customers.module';
 import { ReportsModule } from './reports/reports.module';
 import { ReservationsModule } from './reservations/reservations.module';
@@ -22,8 +23,10 @@ import { WaitlistModule } from './waitlist/waitlist.module';
           host: process.env.DB_HOST ?? 'localhost',
           port: Number.isFinite(dbPort) ? dbPort : 5432,
           username: process.env.DB_USER ?? 'postgres',
-          password: process.env.DB_PASSWORD ?? 'postgres',
-          database: process.env.DB_NAME ?? 'restaurant_reservations',
+          password: process.env.DB_PASSWORD ?? '34343434',
+          database:
+            process.env.DB_NAME ??
+            'Sistema de gestión de reservas y experiencia del cliente',
           ssl:
             process.env.DB_SSL === 'true'
               ? { rejectUnauthorized: false }
@@ -34,6 +37,7 @@ import { WaitlistModule } from './waitlist/waitlist.module';
       },
     }),
     AuthModule,
+    EstablishmentModule,
     ReservationsModule,
     CustomersModule,
     UsersModule,

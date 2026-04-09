@@ -2,7 +2,7 @@ import { Transform } from 'class-transformer';
 import { IsBoolean, IsIn, IsOptional } from 'class-validator';
 import { Role } from '../../auth/enums/role.enum';
 
-const LISTABLE_ROLES = [Role.Host, Role.Manager, Role.Customer] as const;
+const LISTABLE_ROLES = [Role.Customer, Role.Host, Role.Manager] as const;
 
 const parseBoolean = (value: unknown): unknown => {
   if (value === undefined || value === null || value === '') {
@@ -34,7 +34,7 @@ const parseBoolean = (value: unknown): unknown => {
 
 export class ListUsersQueryDto {
   @IsOptional()
-  @IsIn(LISTABLE_ROLES)
+  @IsIn(LISTABLE_ROLES, { message: 'El rol seleccionado no es válido.' })
   role?: (typeof LISTABLE_ROLES)[number];
 
   @Transform(({ value }: { value: unknown }) => parseBoolean(value))

@@ -9,13 +9,15 @@ import bcrypt from 'bcrypt';
 import { Repository } from 'typeorm';
 import { UserEntity } from '../auth/entities/user.entity';
 import { Role } from '../auth/enums/role.enum';
+import type { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { CreateInternalUserDto } from './dto/create-internal-user.dto';
 import { ListUsersQueryDto } from './dto/list-users.query.dto';
 
-interface PublicUser {
+export interface PublicUser {
   id: string;
   email: string;
   fullName: string;
+  restaurantName: string | null;
   role: Role;
   isActive: boolean;
   phone: string | null;
@@ -34,8 +36,10 @@ export class UsersService {
   ) {}
 
   async createInternal(
+    admin: AuthenticatedUser,
     createInternalUserDto: CreateInternalUserDto,
   ): Promise<PublicUser> {
+    const restaurantName = this.resolveRestaurantName(admin);
     const email = createInternalUserDto.email.trim().toLowerCase();
     const fullName = createInternalUserDto.fullName.trim();
 
@@ -51,6 +55,8 @@ export class UsersService {
       email,
       fullName,
       role: createInternalUserDto.role,
+      phone: createInternalUserDto.phone?.trim() || null,
+      restaurantName,
       passwordHash: await bcrypt.hash(
         createInternalUserDto.password,
         this.bcryptRounds,
@@ -69,13 +75,18 @@ export class UsersService {
     }
   }
 
-  async list(query: ListUsersQueryDto): Promise<PublicUser[]> {
+  async list(
+    admin: AuthenticatedUser,
+    query: ListUsersQueryDto,
+  ): Promise<PublicUser[]> {
+    const restaurantName = this.resolveRestaurantName(admin);
     const qb = this.userRepository
       .createQueryBuilder('user')
       .select([
         'user.id',
         'user.email',
         'user.fullName',
+        'user.restaurantName',
         'user.role',
         'user.isActive',
         'user.phone',
@@ -84,6 +95,7 @@ export class UsersService {
         'user.updatedAt',
       ])
       .where('user.role <> :adminRole', { adminRole: Role.Admin })
+      .andWhere('user.restaurantName = :restaurantName', { restaurantName })
       .orderBy('user.fullName', 'ASC')
       .addOrderBy('user.createdAt', 'DESC');
 
@@ -99,8 +111,11 @@ export class UsersService {
     return users.map((user) => this.toPublicUser(user));
   }
 
-  async remove(id: string): Promise<PublicUser> {
-    const user = await this.userRepository.findOne({ where: { id } });
+  async remove(admin: AuthenticatedUser, id: string): Promise<PublicUser> {
+    const restaurantName = this.resolveRestaurantName(admin);
+    const user = await this.userRepository.findOne({
+      where: { id, restaurantName },
+    });
 
     if (!user) {
       throw new NotFoundException('Usuario no encontrado');
@@ -119,6 +134,7 @@ export class UsersService {
       id: user.id,
       email: user.email,
       fullName: user.fullName,
+      restaurantName: user.restaurantName ?? null,
       role: user.role,
       isActive: user.isActive,
       phone: user.phone ?? null,
@@ -135,5 +151,10 @@ export class UsersService {
 
     const driverError = error as { driverError?: { code?: string } };
     return driverError.driverError?.code === '23505';
+  }
+
+  private resolveRestaurantName(admin: AuthenticatedUser): string {
+    // MVP mono-restaurante: el scope se toma del admin autenticado.
+    return admin.restaurantName?.trim() || 'Restaurante principal';
   }
 }

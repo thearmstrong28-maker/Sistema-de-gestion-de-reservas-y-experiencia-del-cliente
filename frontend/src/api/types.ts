@@ -15,7 +15,7 @@ export type WaitlistStatus =
 
 export type UserRole = 'admin' | 'host' | 'manager' | 'customer'
 
-export type InternalUserRole = 'host' | 'manager'
+export type InternalUserRole = 'customer' | 'host' | 'manager'
 
 export interface RestaurantTable {
   id: string
@@ -93,6 +93,25 @@ export interface DailyOccupancyRow {
   occupancyPercent: number
 }
 
+export interface DailyReportSummary {
+  restaurantName: string
+  reportDate: string
+  reservationsCount: number
+  attendedCount: number
+  customerCount: number
+  noShowCount: number
+  attendancePercent: number
+}
+
+export interface DailyComparisonRow {
+  reportDate: string
+  reservationsCount: number
+  attendedCount: number
+  customerCount: number
+  noShowCount: number
+  attendancePercent: number
+}
+
 export interface FrequentCustomerRow {
   customerId: string
   fullName: string
@@ -108,6 +127,18 @@ export interface AuthProfile {
   email: string
   role: UserRole
   fullName: string
+  restaurantName: string | null
+}
+
+export interface EstablishmentSummary {
+  restaurantName: string
+  usersCount: number
+  activeUsersCount: number
+  customerUsersCount: number
+  internalUsersCount: number
+  tablesCount: number
+  activeTablesCount: number
+  reservationsCount: number
 }
 
 export interface LoginRequest {
@@ -141,6 +172,7 @@ export interface RegisterResponse {
 export interface CreateInternalUserRequest {
   email: string
   fullName: string
+  phone?: string
   password: string
   role: InternalUserRole
 }
@@ -149,6 +181,7 @@ export interface AdminUser {
   id: string
   email: string
   fullName: string
+  restaurantName: string | null
   role: UserRole
   isActive: boolean
   phone: string | null
@@ -160,6 +193,11 @@ export interface AdminUser {
 export interface ListUsersQuery {
   role?: Exclude<UserRole, 'admin'>
   isActive?: boolean
+}
+
+export interface CreateTablesBulkRequest {
+  quantity: number
+  capacity?: number
 }
 
 export type AvailabilityRequest = CheckAvailabilityRequest
@@ -267,6 +305,15 @@ export interface DailyOccupancyQuery {
 export interface FrequentCustomersQuery {
   minVisits?: number
   limit?: number
+}
+
+export interface DailySummaryQuery {
+  date?: string
+}
+
+export interface DailyComparisonQuery {
+  date?: string
+  days?: number
 }
 
 export interface ApiErrorResponse {

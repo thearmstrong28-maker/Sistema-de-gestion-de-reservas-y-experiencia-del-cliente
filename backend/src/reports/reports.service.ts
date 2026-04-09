@@ -1,6 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
+import { DailyComparisonQueryDto } from './dto/daily-comparison.query.dto';
 import { DailyOccupancyQueryDto } from './dto/daily-occupancy.query.dto';
+import { DailySummaryQueryDto } from './dto/daily-summary.query.dto';
 import { FrequentCustomersQueryDto } from './dto/frequent-customers.query.dto';
 
 export interface DailyOccupancyRow {
@@ -12,6 +15,25 @@ export interface DailyOccupancyRow {
   reservedGuests: number;
   totalCapacity: number;
   occupancyPercent: number;
+}
+
+export interface DailySummaryRow {
+  restaurantName: string;
+  reportDate: string;
+  reservationsCount: number;
+  attendedCount: number;
+  customerCount: number;
+  noShowCount: number;
+  attendancePercent: number;
+}
+
+export interface DailyComparisonRow {
+  reportDate: string;
+  reservationsCount: number;
+  attendedCount: number;
+  customerCount: number;
+  noShowCount: number;
+  attendancePercent: number;
 }
 
 export interface FrequentCustomerRow {
@@ -27,6 +49,70 @@ export interface FrequentCustomerRow {
 @Injectable()
 export class ReportsService {
   constructor(private readonly dataSource: DataSource) {}
+
+  async getDailySummary(
+    admin: AuthenticatedUser,
+    query: DailySummaryQueryDto,
+  ): Promise<DailySummaryRow> {
+    const restaurantName = this.resolveRestaurantName(admin);
+    const reportDate = this.resolveReportDate(query.date);
+    const row = await this.getDailyMetrics(reportDate);
+
+    return {
+      restaurantName,
+      reportDate,
+      ...row,
+    };
+  }
+
+  async getDailyComparison(
+    admin: AuthenticatedUser,
+    query: DailyComparisonQueryDto,
+  ): Promise<DailyComparisonRow[]> {
+    const reportDate = this.resolveReportDate(query.date);
+    const days = Math.min(Math.max(query.days ?? 7, 1), 30);
+    this.resolveRestaurantName(admin);
+
+    const rawRows: unknown = await this.dataSource.query(
+      `
+        WITH requested_dates AS (
+          SELECT generate_series(
+            ($1::date - (($2 - 1) * INTERVAL '1 day'))::date,
+            $1::date,
+            INTERVAL '1 day'
+          )::date AS report_date
+        )
+        SELECT
+          to_char(d.report_date, 'YYYY-MM-DD') AS "reportDate",
+          COALESCE(m.reservations_count, 0) AS "reservationsCount",
+          COALESCE(m.attended_count, 0) AS "attendedCount",
+          COALESCE(m.customer_count, 0) AS "customerCount",
+          COALESCE(m.no_show_count, 0) AS "noShowCount",
+          CASE
+            WHEN COALESCE(m.reservations_count, 0) = 0 THEN 0
+            ELSE ROUND(
+              (COALESCE(m.attended_count, 0)::numeric / COALESCE(m.reservations_count, 0)::numeric) * 100,
+              2
+            )
+          END AS "attendancePercent"
+        FROM requested_dates d
+        LEFT JOIN daily_establishment_report m
+          ON m.report_date = d.report_date
+        ORDER BY d.report_date ASC
+      `,
+      [reportDate, days],
+    );
+    const rows = rawRows as Array<Record<string, unknown>>;
+
+    return rows.map((row: Record<string, unknown>) => ({
+      reportDate: String(row.reportDate),
+      reservationsCount: Number(row.reservationsCount),
+      attendedCount: Number(row.attendedCount),
+      customerCount: Number(row.customerCount),
+      noShowCount: Number(row.noShowCount),
+      attendancePercent: Number(row.attendancePercent),
+    }));
+  }
 
   async getDailyOccupancy(
     query: DailyOccupancyQueryDto,
@@ -98,5 +184,61 @@ export class ReportsService {
       noShowCount: Number(row.noShowCount),
       lastVisitAt: (row.lastVisitAt as string | null) ?? null,
     }));
+  }
+
+  private async getDailyMetrics(
+    reportDate: string,
+  ): Promise<Omit<DailySummaryRow, 'restaurantName' | 'reportDate'>> {
+    const rawRows: unknown = await this.dataSource.query(
+      `
+        SELECT
+          COALESCE(reservations_count, 0) AS "reservationsCount",
+          COALESCE(attended_count, 0) AS "attendedCount",
+          COALESCE(customer_count, 0) AS "customerCount",
+          COALESCE(no_show_count, 0) AS "noShowCount",
+          CASE
+            WHEN COALESCE(reservations_count, 0) = 0 THEN 0
+            ELSE ROUND(
+              (COALESCE(attended_count, 0)::numeric / COALESCE(reservations_count, 0)::numeric) * 100,
+              2
+            )
+          END AS "attendancePercent"
+        FROM daily_establishment_report
+        WHERE report_date = $1::date
+        LIMIT 1
+      `,
+      [reportDate],
+    );
+    const row = (rawRows as Array<Record<string, unknown>>)[0];
+
+    if (!row) {
+      return {
+        reservationsCount: 0,
+        attendedCount: 0,
+        customerCount: 0,
+        noShowCount: 0,
+        attendancePercent: 0,
+      };
+    }
+
+    return {
+      reservationsCount: Number(row.reservationsCount),
+      attendedCount: Number(row.attendedCount),
+      customerCount: Number(row.customerCount),
+      noShowCount: Number(row.noShowCount),
+      attendancePercent: Number(row.attendancePercent),
+    };
+  }
+
+  private resolveRestaurantName(admin: AuthenticatedUser): string {
+    return admin.restaurantName?.trim() || 'Restaurante principal';
+  }
+
+  private resolveReportDate(value?: Date): string {
+    if (!value) {
+      return new Date().toISOString().slice(0, 10);
+    }
+
+    return value.toISOString().slice(0, 10);
   }
 }
