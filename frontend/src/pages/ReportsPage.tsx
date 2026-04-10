@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useRef, useState, type FormEvent } from 'react'
 import { api, getApiErrorMessage } from '../api/http'
 import type {
   DailyOccupancyRow,
@@ -15,28 +15,53 @@ interface ActionState<T> {
   status: Status
   message: string
   data: T | null
+  updatedAt: string | null
 }
 
 const emptyOccupancy = { date: '', shiftId: '' }
 const emptyFrequent = { minVisits: '2', limit: '20' }
 
 export function ReportsPage() {
+  const occupancyPanelRef = useRef<HTMLFormElement>(null)
+  const frequentPanelRef = useRef<HTMLFormElement>(null)
+  const [selectedReport, setSelectedReport] = useState<'occupancy' | 'frequent'>('occupancy')
   const [occupancyForm, setOccupancyForm] = useState(emptyOccupancy)
   const [frequentForm, setFrequentForm] = useState(emptyFrequent)
   const [occupancyState, setOccupancyState] = useState<ActionState<DailyOccupancyRow[]>>({
     status: 'idle',
     message: '',
     data: null,
+    updatedAt: null,
   })
   const [frequentState, setFrequentState] = useState<ActionState<FrequentCustomerRow[]>>({
     status: 'idle',
     message: '',
     data: null,
+    updatedAt: null,
   })
+
+  const statusLabel: Record<Status, string> = {
+    idle: 'Sin consultar',
+    loading: 'Actualizando',
+    success: 'Disponible',
+    error: 'Con error',
+  }
+
+  const scrollToReport = (report: 'occupancy' | 'frequent') => {
+    setSelectedReport(report)
+    const target = report === 'occupancy' ? occupancyPanelRef.current : frequentPanelRef.current
+    target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
 
   const loadOccupancy = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    setOccupancyState({ status: 'loading', message: 'Cargando ocupación...', data: null })
+    setSelectedReport('occupancy')
+    setOccupancyState((previous) => ({
+      status: 'loading',
+      message: 'Cargando ocupación...',
+      data: null,
+      updatedAt: previous.updatedAt,
+    }))
 
     try {
       const payload: DailyOccupancyQuery = {
@@ -46,19 +71,31 @@ export function ReportsPage() {
       const { data } = await api.get<DailyOccupancyRow[]>('/reports/daily-occupancy', {
         params: payload,
       })
-      setOccupancyState({ status: 'success', message: 'Reporte listo.', data })
+      setOccupancyState({
+        status: 'success',
+        message: 'Reporte listo.',
+        data,
+        updatedAt: new Date().toISOString(),
+      })
     } catch (error) {
-      setOccupancyState({ status: 'error', message: getApiErrorMessage(error), data: null })
+      setOccupancyState((previous) => ({
+        status: 'error',
+        message: getApiErrorMessage(error),
+        data: null,
+        updatedAt: previous.updatedAt,
+      }))
     }
   }
 
   const loadFrequentCustomers = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    setFrequentState({
+    setSelectedReport('frequent')
+    setFrequentState((previous) => ({
       status: 'loading',
       message: 'Cargando clientes frecuentes...',
       data: null,
-    })
+      updatedAt: previous.updatedAt,
+    }))
 
     try {
       const payload: FrequentCustomersQuery = {
@@ -68,9 +105,19 @@ export function ReportsPage() {
       const { data } = await api.get<FrequentCustomerRow[]>('/reports/frequent-customers', {
         params: payload,
       })
-      setFrequentState({ status: 'success', message: 'Listado listo.', data })
+      setFrequentState({
+        status: 'success',
+        message: 'Listado listo.',
+        data,
+        updatedAt: new Date().toISOString(),
+      })
     } catch (error) {
-      setFrequentState({ status: 'error', message: getApiErrorMessage(error), data: null })
+      setFrequentState((previous) => ({
+        status: 'error',
+        message: getApiErrorMessage(error),
+        data: null,
+        updatedAt: previous.updatedAt,
+      }))
     }
   }
 
@@ -84,8 +131,64 @@ export function ReportsPage() {
         <p className="muted">Ocupación diaria y clientes frecuentes con lectura rápida.</p>
       </div>
 
+      <div className="reports-overview-grid">
+        <article
+          className={`panel report-summary-card ${selectedReport === 'frequent' ? 'report-summary-card-active' : ''}`}
+        >
+          <h3>Reporte de clientes frecuentes</h3>
+          <p className="subtle">Listado de clientes con mayor recurrencia y seguimiento de ausencias.</p>
+          <div className="report-summary-meta">
+            <span>
+              <strong>{frequentState.data?.length ?? 0}</strong> registros
+            </span>
+            <span>Estado: {statusLabel[frequentState.status]}</span>
+            <span>
+              Última actualización:{' '}
+              {frequentState.updatedAt ? formatDateTime(frequentState.updatedAt) : 'Sin actualizaciones'}
+            </span>
+          </div>
+          <button
+            type="button"
+            className="button button-secondary button-tight"
+            onClick={() => scrollToReport('frequent')}
+          >
+            Ver contenido
+          </button>
+        </article>
+
+        <article
+          className={`panel report-summary-card ${selectedReport === 'occupancy' ? 'report-summary-card-active' : ''}`}
+        >
+          <h3>Reporte de ocupación diaria</h3>
+          <p className="subtle">Resumen de mesas ocupadas, capacidad total y porcentaje de ocupación.</p>
+          <div className="report-summary-meta">
+            <span>
+              <strong>{occupancyState.data?.length ?? 0}</strong> registros
+            </span>
+            <span>Estado: {statusLabel[occupancyState.status]}</span>
+            <span>
+              Última actualización:{' '}
+              {occupancyState.updatedAt
+                ? formatDateTime(occupancyState.updatedAt)
+                : 'Sin actualizaciones'}
+            </span>
+          </div>
+          <button
+            type="button"
+            className="button button-primary button-tight"
+            onClick={() => scrollToReport('occupancy')}
+          >
+            Ver contenido
+          </button>
+        </article>
+      </div>
+
       <div className="two-column-grid">
-        <form className="panel form-panel" onSubmit={loadOccupancy}>
+        <form
+          ref={occupancyPanelRef}
+          className={`panel form-panel ${selectedReport === 'occupancy' ? 'report-panel-focused' : ''}`}
+          onSubmit={loadOccupancy}
+        >
           <h3>Ocupación diaria</h3>
           <div className="form-grid">
             <label>
@@ -149,7 +252,11 @@ export function ReportsPage() {
           </div>
         </form>
 
-        <form className="panel form-panel" onSubmit={loadFrequentCustomers}>
+        <form
+          ref={frequentPanelRef}
+          className={`panel form-panel ${selectedReport === 'frequent' ? 'report-panel-focused' : ''}`}
+          onSubmit={loadFrequentCustomers}
+        >
           <h3>Clientes frecuentes</h3>
           <div className="form-grid">
             <label>

@@ -1,5 +1,5 @@
 import { RoleLoginPage } from './RoleLoginPage'
 
-export function LoginPage() {
+export function ManagerLoginPage() {
   return <RoleLoginPage />
 }

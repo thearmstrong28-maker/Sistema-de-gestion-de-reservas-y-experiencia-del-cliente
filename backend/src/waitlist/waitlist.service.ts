@@ -3,6 +3,11 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { CustomerEntity } from '../customers/entities/customer.entity';
 import { ShiftEntity } from '../shifts/entities/shift.entity';
+import {
+  buildShiftName,
+  SHIFT_SLOT_WINDOWS,
+  type ShiftSlot,
+} from '../shifts/shift-slot';
 import { CreateWaitlistEntryDto } from './dto/create-waitlist-entry.dto';
 import { ListWaitlistQueryDto } from './dto/list-waitlist.query';
 import { UpdateWaitlistEntryDto } from './dto/update-waitlist-entry.dto';
@@ -24,8 +29,10 @@ export class WaitlistService {
     createWaitlistEntryDto: CreateWaitlistEntryDto,
   ): Promise<WaitlistEntryEntity> {
     await this.ensureCustomerExists(createWaitlistEntryDto.customerId);
-    await this.ensureShiftExistsIfProvided(
+    const requestedShift = await this.resolveShift(
       createWaitlistEntryDto.requestedShiftId,
+      createWaitlistEntryDto.turno,
+      createWaitlistEntryDto.requestedDate,
     );
 
     const requestedDate = createWaitlistEntryDto.requestedDate
@@ -34,14 +41,11 @@ export class WaitlistService {
 
     const position =
       createWaitlistEntryDto.position ??
-      (await this.getNextPosition(
-        requestedDate,
-        createWaitlistEntryDto.requestedShiftId,
-      ));
+      (await this.getNextPosition(requestedDate, requestedShift?.id));
 
     const entry = this.waitlistRepository.create({
       customerId: createWaitlistEntryDto.customerId,
-      requestedShiftId: createWaitlistEntryDto.requestedShiftId,
+      requestedShiftId: requestedShift?.id ?? null,
       requestedDate,
       partySize: createWaitlistEntryDto.partySize,
       notes: createWaitlistEntryDto.notes,
@@ -93,18 +97,55 @@ export class WaitlistService {
     }
   }
 
-  private async ensureShiftExistsIfProvided(shiftId?: string): Promise<void> {
-    if (!shiftId) {
-      return;
+  private async resolveShift(
+    shiftId: string | undefined,
+    turno: ShiftSlot | undefined,
+    requestedDate: Date,
+  ): Promise<ShiftEntity | null> {
+    if (shiftId) {
+      const shift = await this.shiftRepository.findOne({
+        where: { id: shiftId, isActive: true },
+      });
+      if (!shift) {
+        throw new NotFoundException('Shift not found or inactive');
+      }
+
+      return shift;
     }
 
-    const shift = await this.shiftRepository.findOne({
-      where: { id: shiftId, isActive: true },
-      select: { id: true },
-    });
-    if (!shift) {
-      throw new NotFoundException('Shift not found or inactive');
+    if (!turno) {
+      return null;
     }
+
+    const shiftDate = requestedDate.toISOString().slice(0, 10);
+    const shiftName = buildShiftName(shiftDate, turno);
+    const window = SHIFT_SLOT_WINDOWS[turno];
+
+    const existing = await this.shiftRepository.findOne({
+      where: { shiftName },
+    });
+
+    if (existing) {
+      if (!existing.isActive) {
+        existing.isActive = true;
+        existing.shiftDate = shiftDate;
+        existing.startsAt = window.startsAt;
+        existing.endsAt = window.endsAt;
+        return this.shiftRepository.save(existing);
+      }
+
+      return existing;
+    }
+
+    return this.shiftRepository.save(
+      this.shiftRepository.create({
+        shiftName,
+        shiftDate,
+        startsAt: window.startsAt,
+        endsAt: window.endsAt,
+        isActive: true,
+      }),
+    );
   }
 
   private async getNextPosition(

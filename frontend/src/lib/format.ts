@@ -31,10 +31,33 @@ export const stringifyJson = (value: Record<string, unknown>): string =>
 export const toIsoFromDatetimeLocal = (value: string): string =>
   value ? new Date(value).toISOString() : ''
 
+export const toIsoFromDateAndTime = (dateValue: string, timeValue: string): string =>
+  dateValue && timeValue ? new Date(`${dateValue}T${timeValue}:00`).toISOString() : ''
+
+export const toTimeInputValue = (value: string | null | undefined): string => {
+  if (!value) {
+    return ''
+  }
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return ''
+  }
+
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+}
+
 export const toDateInputValue = (value: string | null | undefined): string => {
   if (!value) {
     return ''
   }
 
-  return value.slice(0, 10)
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return ''
+  }
+
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(
+    date.getDate(),
+  ).padStart(2, '0')}`
 }

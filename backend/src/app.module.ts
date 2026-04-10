@@ -8,6 +8,7 @@ import { EstablishmentModule } from './establishment/establishment.module';
 import { CustomersModule } from './customers/customers.module';
 import { ReportsModule } from './reports/reports.module';
 import { ReservationsModule } from './reservations/reservations.module';
+import { ShiftsModule } from './shifts/shifts.module';
 import { UsersModule } from './users/users.module';
 import { WaitlistModule } from './waitlist/waitlist.module';
 
@@ -39,6 +40,7 @@ import { WaitlistModule } from './waitlist/waitlist.module';
     AuthModule,
     EstablishmentModule,
     ReservationsModule,
+    ShiftsModule,
     CustomersModule,
     UsersModule,
     WaitlistModule,

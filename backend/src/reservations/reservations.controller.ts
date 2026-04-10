@@ -19,6 +19,7 @@ import { CreateReservationDto } from './dto/create-reservation.dto';
 import { CheckAvailabilityDto } from './dto/check-availability.dto';
 import { UpdateReservationDto } from './dto/update-reservation.dto';
 import { AssignTableDto } from './dto/assign-table.dto';
+import { ListReservationsQueryDto } from './dto/list-reservations.query';
 import { ReservationsService } from './reservations.service';
 
 @Controller('reservations')
@@ -59,7 +60,7 @@ export class ReservationsController {
     return this.reservationsService.markNoShow(id);
   }
 
-  @Roles(Role.Host)
+  @Roles(Role.Admin, Role.Host)
   @Patch(':id/assign-table')
   assignTable(@Param('id') id: string, @Body() assignTableDto: AssignTableDto) {
     return this.reservationsService.assignTable(id, assignTableDto);
@@ -69,5 +70,17 @@ export class ReservationsController {
   @Get('availability')
   availability(@Query() query: CheckAvailabilityDto) {
     return this.reservationsService.getAvailability(query);
+  }
+
+  @Roles(Role.Admin, Role.Host)
+  @Get('tables')
+  tables() {
+    return this.reservationsService.listTablesLayout();
+  }
+
+  @Roles(Role.Admin, Role.Host)
+  @Get()
+  list(@Query() query: ListReservationsQueryDto) {
+    return this.reservationsService.list(query);
   }
 }

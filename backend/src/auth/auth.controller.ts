@@ -11,6 +11,8 @@ import {
 import type { Request, Response } from 'express';
 import { Roles } from './decorators/roles.decorator';
 import { LoginDto } from './dto/login.dto';
+import { LoginManagerDto } from './dto/login-manager.dto';
+import { LoginReceptionistDto } from './dto/login-receptionist.dto';
 import { RegisterDto } from './dto/register.dto';
 import { VerifyPasswordDto } from './dto/verify-password.dto';
 import { ALL_ROLES } from './enums/role.enum';
@@ -49,6 +51,42 @@ export class AuthController {
     });
 
     return { accessToken };
+  }
+
+  @Post('login-gerente')
+  async loginManager(
+    @Body() loginManagerDto: LoginManagerDto,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<{ accessToken: string }> {
+    const { accessToken, refreshToken } =
+      await this.authService.loginManager(loginManagerDto);
+
+    response.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+      secure: false,
+      sameSite: 'lax',
+      path: '/auth/refresh',
+    });
+
+    return { accessToken };
+  }
+
+  @Post('login-recepcionista')
+  async loginReceptionist(
+    @Body() loginReceptionistDto: LoginReceptionistDto,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<{ accessToken: string; profile: AuthenticatedUser }> {
+    const { accessToken, refreshToken, profile } =
+      await this.authService.loginReceptionist(loginReceptionistDto);
+
+    response.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+      secure: false,
+      sameSite: 'lax',
+      path: '/auth/refresh',
+    });
+
+    return { accessToken, profile };
   }
 
   @Post('refresh')

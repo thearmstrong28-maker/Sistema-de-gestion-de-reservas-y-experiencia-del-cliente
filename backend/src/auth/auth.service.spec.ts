@@ -13,6 +13,7 @@ import { AuthService } from './auth.service';
 describe('AuthService', () => {
   let service: AuthService;
   let userRepository: {
+    find: jest.MockedFunction<(options: unknown) => Promise<UserEntity[]>>;
     findOne: jest.MockedFunction<
       (options: unknown) => Promise<UserEntity | null>
     >;
@@ -66,6 +67,7 @@ describe('AuthService', () => {
     jest.clearAllMocks();
 
     userRepository = {
+      find: jest.fn(() => Promise.resolve([])),
       findOne: jest.fn(() => Promise.resolve(null)),
       create: jest.fn((value: Partial<UserEntity>) => value as UserEntity),
       save: jest.fn((value: UserEntity) => ({
@@ -423,5 +425,178 @@ describe('AuthService', () => {
     expect(userClassRepository.find).toHaveBeenCalledWith({
       where: { isActive: true },
     });
+  });
+
+  it('logs in a manager with their registered name and updates last_login_at', async () => {
+    userRepository.find.mockResolvedValue([
+      {
+        id: 'manager-1',
+        email: 'manager@example.test',
+        passwordHash: await bcrypt.hash('StrongP@ss1', 10),
+        fullName: 'Gerente Sala',
+        restaurantName: 'Casa del Sabor',
+        role: Role.Manager,
+        isActive: true,
+      } as UserEntity,
+    ]);
+    userRepository.save.mockImplementation((value: UserEntity) =>
+      Promise.resolve({
+        ...value,
+      }),
+    );
+    jwtService.signAsync
+      .mockResolvedValueOnce('manager-access-token')
+      .mockResolvedValueOnce('manager-refresh-token');
+
+    const result = await service.loginManager({
+      fullName: '  Gerente Sala  ',
+      password: 'StrongP@ss1',
+    });
+
+    expect(userRepository.find).toHaveBeenCalledWith({
+      where: { role: Role.Manager, isActive: true },
+    });
+    expect(userRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'manager-1',
+        role: Role.Manager,
+        isActive: true,
+      }),
+    );
+    expect(jwtService.signAsync).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({
+      accessToken: 'manager-access-token',
+      refreshToken: 'manager-refresh-token',
+    });
+  });
+
+  it('logs in a receptionist with email and returns access token with profile', async () => {
+    userRepository.find.mockResolvedValue([
+      {
+        id: 'host-1',
+        email: 'host@example.test',
+        passwordHash: await bcrypt.hash('StrongP@ss1', 10),
+        fullName: 'Recepcion Front',
+        restaurantName: 'Casa del Sabor',
+        role: Role.Host,
+        isActive: true,
+      } as UserEntity,
+    ]);
+    userRepository.save.mockImplementation((value: UserEntity) =>
+      Promise.resolve({
+        ...value,
+      }),
+    );
+    jwtService.signAsync
+      .mockResolvedValueOnce('host-access-token')
+      .mockResolvedValueOnce('host-refresh-token');
+
+    const result = await service.loginReceptionist({
+      identifier: 'host@example.test',
+      password: 'StrongP@ss1',
+    });
+
+    expect(userRepository.find).toHaveBeenCalledWith({
+      where: { role: Role.Host, isActive: true },
+    });
+    expect(userRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'host-1',
+        role: Role.Host,
+      }),
+    );
+    expect(result).toEqual({
+      accessToken: 'host-access-token',
+      refreshToken: 'host-refresh-token',
+      profile: {
+        userId: 'host-1',
+        email: 'host@example.test',
+        role: Role.Host,
+        fullName: 'Recepcion Front',
+        restaurantName: 'Casa del Sabor',
+      },
+    });
+  });
+
+  it('rejects receptionist login when more than one active receptionist shares the same name', async () => {
+    userRepository.find.mockResolvedValue([
+      {
+        id: 'host-1',
+        email: 'host1@example.test',
+        passwordHash: await bcrypt.hash('StrongP@ss1', 10),
+        fullName: 'Recepcion Turno',
+        restaurantName: 'Casa del Sabor',
+        role: Role.Host,
+        isActive: true,
+      } as UserEntity,
+      {
+        id: 'host-2',
+        email: 'host2@example.test',
+        passwordHash: await bcrypt.hash('StrongP@ss1', 10),
+        fullName: 'Recepcion Turno',
+        restaurantName: 'Casa del Sabor',
+        role: Role.Host,
+        isActive: true,
+      } as UserEntity,
+    ]);
+
+    await expect(
+      service.loginReceptionist({
+        identifier: 'Recepcion Turno',
+        password: 'StrongP@ss1',
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('rejects manager login when more than one active manager shares the same name', async () => {
+    userRepository.find.mockResolvedValue([
+      {
+        id: 'manager-1',
+        email: 'manager1@example.test',
+        passwordHash: await bcrypt.hash('StrongP@ss1', 10),
+        fullName: 'Gerente Sala',
+        restaurantName: 'Casa del Sabor',
+        role: Role.Manager,
+        isActive: true,
+      } as UserEntity,
+      {
+        id: 'manager-2',
+        email: 'manager2@example.test',
+        passwordHash: await bcrypt.hash('StrongP@ss1', 10),
+        fullName: 'Gerente Sala',
+        restaurantName: 'Casa del Sabor',
+        role: Role.Manager,
+        isActive: true,
+      } as UserEntity,
+    ]);
+
+    await expect(
+      service.loginManager({
+        fullName: 'Gerente Sala',
+        password: 'StrongP@ss1',
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('rejects manager login with a clear access message when the password is wrong', async () => {
+    userRepository.find.mockResolvedValue([
+      {
+        id: 'manager-1',
+        email: 'manager@example.test',
+        passwordHash: await bcrypt.hash('StrongP@ss1', 10),
+        fullName: 'Gerente Sala',
+        restaurantName: 'Casa del Sabor',
+        role: Role.Manager,
+        isActive: true,
+      } as UserEntity,
+    ]);
+
+    await expect(
+      service.loginManager({
+        fullName: 'Gerente Sala',
+        password: 'WrongP@ss1',
+      }),
+    ).rejects.toThrow('No tenés acceso de gerente con esas credenciales');
+    expect(userRepository.save).not.toHaveBeenCalled();
   });
 });

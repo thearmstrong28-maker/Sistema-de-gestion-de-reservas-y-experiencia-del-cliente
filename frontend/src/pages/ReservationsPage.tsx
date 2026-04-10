@@ -27,7 +27,6 @@ const emptyReservationState = {
   endsAt: '',
   tableId: '',
   specialRequests: '',
-  notes: '',
 }
 
 const emptyPatchState = {
@@ -39,7 +38,6 @@ const emptyPatchState = {
   endsAt: '',
   tableId: '',
   specialRequests: '',
-  notes: '',
 }
 
 const buildReservationPreview = (reservation: Reservation) => ({
@@ -53,7 +51,6 @@ const buildReservationPreview = (reservation: Reservation) => ({
   comensales: reservation.partySize,
   estado: formatReservationStatus(reservation.status),
   solicitudesEspeciales: reservation.specialRequests ?? '—',
-  notas: reservation.notes ?? '—',
 })
 
 export function ReservationsPage() {
@@ -90,7 +87,6 @@ export function ReservationsPage() {
         endsAt: createForm.endsAt ? toIsoFromDatetimeLocal(createForm.endsAt) : undefined,
         tableId: createForm.tableId.trim() || undefined,
         specialRequests: createForm.specialRequests.trim() || undefined,
-        notes: createForm.notes.trim() || undefined,
       })
 
       const { data } = await api.post<Reservation>('/reservations', payload)
@@ -114,7 +110,6 @@ export function ReservationsPage() {
         endsAt: editForm.endsAt ? toIsoFromDatetimeLocal(editForm.endsAt) : undefined,
         tableId: editForm.tableId.trim() ? editForm.tableId.trim() : undefined,
         specialRequests: editForm.specialRequests.trim() || undefined,
-        notes: editForm.notes.trim() || undefined,
       })
 
       const { data } = await api.patch<Reservation>(
@@ -261,17 +256,6 @@ export function ReservationsPage() {
               }
             />
           </label>
-          <label>
-            Notas
-            <textarea
-              rows={3}
-              value={createForm.notes}
-              onChange={(event) =>
-                setCreateForm({ ...createForm, notes: event.target.value })
-              }
-            />
-          </label>
-
           <button type="submit" className="button button-primary">
             Crear reserva
           </button>
@@ -366,17 +350,6 @@ export function ReservationsPage() {
                 }
               />
             </label>
-            <label>
-              Notas
-              <textarea
-                rows={2}
-                value={editForm.notes}
-                onChange={(event) =>
-                  setEditForm({ ...editForm, notes: event.target.value })
-                }
-              />
-            </label>
-
             <button type="submit" className="button button-secondary">
               Guardar cambios
             </button>

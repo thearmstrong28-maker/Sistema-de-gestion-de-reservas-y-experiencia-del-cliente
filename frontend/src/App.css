@@ -121,6 +121,19 @@
   width: min(100%, 560px);
 }
 
+.auth-role-tabs {
+  width: min(100%, 560px);
+  justify-content: center;
+}
+
+.auth-role-tabs .tab {
+  flex: 1 1 0;
+}
+
+.auth-role-card {
+  width: min(100%, 560px);
+}
+
 .auth-intro {
   display: grid;
   gap: 10px;
@@ -284,6 +297,34 @@
   gap: 14px;
 }
 
+.reports-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.report-summary-card {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.report-summary-card-active {
+  border-color: rgba(15, 23, 42, 0.38);
+  box-shadow: 0 12px 22px rgba(15, 23, 42, 0.1);
+}
+
+.report-summary-meta {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.report-panel-focused {
+  border-color: rgba(15, 23, 42, 0.34);
+}
+
 .selected-table-card {
   display: grid;
   gap: 8px;
@@ -309,6 +350,40 @@
 .tables-showcase-panel {
   display: grid;
   gap: 14px;
+}
+
+.receptionist-tabs {
+  margin-top: 4px;
+}
+
+.receptionist-reservations-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  align-items: stretch;
+}
+
+.receptionist-reservations-card-create,
+.receptionist-reservations-card-waitlist,
+.receptionist-reservations-card-upcoming {
+  display: flex;
+  flex-direction: column;
+  min-height: 560px;
+}
+
+.receptionist-reservations-card-waitlist,
+.receptionist-reservations-card-upcoming {
+  align-content: flex-start;
+}
+
+.receptionist-waitlist-scroll,
+.receptionist-upcoming-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 320px;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-gutter: stable;
 }
 
 .tables-stage-meta {
@@ -414,6 +489,14 @@
 .table-node-dragging {
   cursor: grabbing;
   box-shadow: 0 10px 20px rgba(15, 23, 42, 0.14);
+}
+
+.table-node-readonly {
+  cursor: default;
+}
+
+.table-node-readonly:hover {
+  transform: translate(-50%, -50%);
 }
 
 .comparison-chart {
@@ -590,6 +673,54 @@
   gap: 12px;
 }
 
+.receptionist-client-panel-register,
+.receptionist-client-panel-search {
+  display: flex;
+  flex-direction: column;
+  min-height: 560px;
+  align-self: stretch;
+}
+
+.receptionist-client-panel-search {
+  align-content: start;
+}
+
+.receptionist-search-form {
+  gap: 12px;
+}
+
+.receptionist-search-actions {
+  margin-top: 0;
+}
+
+.receptionist-search-results {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 320px;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-gutter: stable;
+  align-content: start;
+}
+
+.receptionist-search-results .history-item {
+  align-items: flex-start;
+  justify-content: flex-start;
+}
+
+.receptionist-future-reservations-list .receptionist-reservation-item {
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.history-item-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex: 0 0 auto;
+}
+
 .tabbar-compact {
   padding-bottom: 4px;
 }
@@ -642,6 +773,21 @@
 .button-icon-delete:hover:not(:disabled) {
   background: rgba(185, 28, 28, 0.16);
   border-color: rgba(185, 28, 28, 0.72);
+}
+
+.button-icon-no-show {
+  color: #b45309;
+  border-color: rgba(180, 83, 9, 0.45);
+  background: rgba(180, 83, 9, 0.1);
+}
+
+.button-icon-no-show .button-icon-image {
+  filter: invert(34%) sepia(93%) saturate(1053%) hue-rotate(4deg) brightness(93%) contrast(92%);
+}
+
+.button-icon-no-show:hover:not(:disabled) {
+  background: rgba(180, 83, 9, 0.18);
+  border-color: rgba(180, 83, 9, 0.76);
 }
 
 .button-icon-availability {
@@ -873,6 +1019,10 @@ select:focus-visible,
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .reports-overview-grid {
+    grid-template-columns: 1fr;
+  }
+
   .hero-grid {
     grid-template-columns: 1fr;
   }
@@ -883,8 +1033,22 @@ select:focus-visible,
 
   .establishment-hero,
   .admin-tabs,
-  .establishment-overview-grid {
+  .establishment-overview-grid,
+  .receptionist-reservations-grid {
     grid-template-columns: 1fr;
+  }
+
+  .receptionist-reservations-card-create,
+  .receptionist-reservations-card-waitlist,
+  .receptionist-reservations-card-upcoming,
+  .receptionist-client-panel-register,
+  .receptionist-client-panel-search {
+    min-height: auto;
+  }
+
+  .receptionist-waitlist-scroll,
+  .receptionist-upcoming-scroll {
+    max-height: 240px;
   }
 }
 

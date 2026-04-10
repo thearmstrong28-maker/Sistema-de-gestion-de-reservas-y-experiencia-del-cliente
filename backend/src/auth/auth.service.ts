@@ -9,10 +9,13 @@ import { InjectRepository } from '@nestjs/typeorm';
 import bcrypt from 'bcrypt';
 import { DataSource, ILike, Repository } from 'typeorm';
 import { LoginDto } from './dto/login.dto';
+import { LoginManagerDto } from './dto/login-manager.dto';
+import { LoginReceptionistDto } from './dto/login-receptionist.dto';
 import { RegisterDto } from './dto/register.dto';
 import { UserClassEntity } from './entities/user-class.entity';
 import { UserEntity } from './entities/user.entity';
 import { Role } from './enums/role.enum';
+import type { AuthenticatedUser } from './interfaces/authenticated-user.interface';
 
 type JwtExpiresIn = `${number}${'ms' | 's' | 'm' | 'h' | 'd' | 'w' | 'y'}`;
 
@@ -159,6 +162,93 @@ export class AuthService {
     return { accessToken, refreshToken };
   }
 
+  async loginManager(
+    loginManagerDto: LoginManagerDto,
+  ): Promise<{ accessToken: string; refreshToken: string }> {
+    const matchingManagers = await this.findActiveManagersByFullName(
+      loginManagerDto.fullName,
+    );
+
+    if (matchingManagers.length > 1) {
+      throw new ConflictException(
+        'Hay más de un gerente activo con ese nombre. Contactá a un administrador para corregirlo.',
+      );
+    }
+
+    const manager = matchingManagers[0];
+
+    if (!manager) {
+      throw new UnauthorizedException(
+        'No tenés acceso de gerente con esas credenciales',
+      );
+    }
+
+    const passwordMatches = await bcrypt.compare(
+      loginManagerDto.password,
+      manager.passwordHash,
+    );
+
+    if (!passwordMatches) {
+      throw new UnauthorizedException(
+        'No tenés acceso de gerente con esas credenciales',
+      );
+    }
+
+    const savedManager = await this.userRepository.save({
+      ...manager,
+      lastLoginAt: new Date(),
+    });
+
+    return this.generateTokens(savedManager);
+  }
+
+  async loginReceptionist(loginReceptionistDto: LoginReceptionistDto): Promise<{
+    accessToken: string;
+    refreshToken: string;
+    profile: AuthenticatedUser;
+  }> {
+    const matchingReceptionists =
+      await this.findActiveReceptionistsByIdentifier(
+        loginReceptionistDto.identifier,
+      );
+
+    if (matchingReceptionists.length > 1) {
+      throw new ConflictException(
+        'Hay más de un recepcionista activo con ese nombre. Contactá a un administrador para corregirlo.',
+      );
+    }
+
+    const receptionist = matchingReceptionists[0];
+
+    if (!receptionist) {
+      throw new UnauthorizedException(
+        'No tenés acceso de recepcionista con esas credenciales',
+      );
+    }
+
+    const passwordMatches = await bcrypt.compare(
+      loginReceptionistDto.password,
+      receptionist.passwordHash,
+    );
+
+    if (!passwordMatches) {
+      throw new UnauthorizedException(
+        'No tenés acceso de recepcionista con esas credenciales',
+      );
+    }
+
+    const savedReceptionist = await this.userRepository.save({
+      ...receptionist,
+      lastLoginAt: new Date(),
+    });
+    const tokens = await this.generateTokens(savedReceptionist);
+
+    return {
+      ...tokens,
+      profile: this.toAuthenticatedUser(savedReceptionist),
+    };
+  }
+
   async refresh(refreshToken?: string): Promise<{ accessToken: string }> {
     if (!refreshToken) {
       throw new UnauthorizedException('El token de renovación es obligatorio');
@@ -242,8 +332,48 @@ export class AuthService {
     return user;
   }
 
+  private async findActiveManagersByFullName(
+    fullName: string,
+  ): Promise<UserEntity[]> {
+    const normalizedFullName = this.normalizeName(fullName);
+    const managers = await this.userRepository.find({
+      where: { role: Role.Manager, isActive: true },
+    });
+
+    return managers.filter(
+      (manager) => this.normalizeName(manager.fullName) === normalizedFullName,
+    );
+  }
+
+  private async findActiveReceptionistsByIdentifier(
+    identifier: string,
+  ): Promise<UserEntity[]> {
+    const normalizedIdentifier = this.normalizeName(identifier);
+    const normalizedEmail = this.normalizeEmail(identifier);
+    const receptionists = await this.userRepository.find({
+      where: { role: Role.Host, isActive: true },
+    });
+
+    const matchingByEmail = receptionists.filter(
+      (receptionist) => receptionist.email === normalizedEmail,
+    );
+
+    if (matchingByEmail.length > 0) {
+      return matchingByEmail;
+    }
+
+    return receptionists.filter(
+      (receptionist) =>
+        this.normalizeName(receptionist.fullName) === normalizedIdentifier,
+    );
+  }
+
   private normalizeEmail(email: string): string {
     return email.trim().toLowerCase();
+  }
+
+  private normalizeName(value: string): string {
+    return value.trim().toLowerCase();
   }
 
   private async generateTokens(
@@ -277,6 +407,16 @@ export class AuthService {
     });
 
     return { accessToken, refreshToken };
+  }
+
+  private toAuthenticatedUser(user: UserEntity): AuthenticatedUser {
+    return {
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+      fullName: user.fullName,
+      restaurantName: user.restaurantName ?? null,
+    };
   }
 
   private toPublicUser(user: UserEntity): PublicUser {

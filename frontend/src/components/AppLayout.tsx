@@ -5,7 +5,7 @@ import { formatUserRole } from '../lib/labels'
 export function AppLayout() {
   const location = useLocation()
   const isRegisterPage = location.pathname === '/registro'
-  const isLoginPage = location.pathname === '/login'
+  const isLoginPage = location.pathname.startsWith('/login')
   const isAdminPage =
     location.pathname === '/administracion' ||
     location.pathname === '/establecimiento' ||
@@ -16,6 +16,7 @@ export function AppLayout() {
   const profile = useAuthStore((state) => state.profile)
   const clearSession = useAuthStore((state) => state.clearSession)
   const isAdmin = profile?.role === 'admin'
+  const isManager = profile?.role === 'manager'
   const restaurantName = profile?.restaurantName?.trim() || 'Restaurante principal'
   const adminTabLabel = 'Administrador'
   const tabs = [
@@ -27,20 +28,26 @@ export function AppLayout() {
   const pageTitle = isRegisterPage
     ? 'Registro'
     : isLoginPage
-      ? 'Inicio de sesión'
+      ? location.pathname === '/login-gerente'
+        ? 'Acceso de gerente'
+        : location.pathname === '/login-recepcionista'
+          ? 'Acceso de recepcionista'
+          : 'Acceso de administrador'
       : isAdminPage
         ? adminTabLabel
         : isManagerPage
           ? 'Gerente'
           : isReceptionistPage
             ? 'Recepcionista'
-        : 'Inicio'
+            : 'Inicio'
 
   return (
     <div className="app-shell">
       <header className="topbar">
         <div>
-          {isRegisterPage || isLoginPage ? null : <p className="eyebrow">Sistema de reservas</p>}
+          {isRegisterPage || isLoginPage ? null : (
+            <p className="eyebrow">Sistema de reservas</p>
+          )}
           <h1>{pageTitle}</h1>
           {isRegisterPage || isLoginPage || isAdminPage ? null : (
             <p className="lead">Gestioná tus reservas y la experiencia de tus clientes.</p>
@@ -74,6 +81,7 @@ export function AppLayout() {
         <nav className="tabbar" aria-label="Secciones principales">
           {tabs
             .filter((tab) => (isAdminPage ? tab.to !== '/' : true))
+            .filter((tab) => (tab.to === '/gerente' ? isManager : true))
             .filter((tab) => tab.to !== '/administracion' || isAdmin)
             .map((tab) => (
               <NavLink

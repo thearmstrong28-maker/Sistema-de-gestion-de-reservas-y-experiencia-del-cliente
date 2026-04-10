@@ -1,19 +1,26 @@
 import { Type } from 'class-transformer';
 import {
   IsDate,
+  IsIn,
   IsOptional,
   IsInt,
   IsString,
   IsUUID,
   Min,
 } from 'class-validator';
+import { DEFAULT_SHIFT_SLOTS, type ShiftSlot } from '../../shifts/shift-slot';
 
 export class CreateReservationDto {
   @IsUUID()
   customerId: string;
 
+  @IsOptional()
   @IsUUID()
-  shiftId: string;
+  shiftId?: string;
+
+  @IsOptional()
+  @IsIn(DEFAULT_SHIFT_SLOTS)
+  turno?: ShiftSlot;
 
   @Type(() => Number)
   @IsInt()

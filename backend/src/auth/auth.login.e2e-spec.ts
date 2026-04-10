@@ -99,4 +99,70 @@ describe('Auth login (e2e)', () => {
       ]);
     }
   });
+
+  it('logs in a receptionist created by admin and returns host profile', async () => {
+    const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const adminEmail = `admin-${suffix}@example.test`;
+    const restaurantName = `Casa del Sabor ${suffix}`;
+    const adminPassword = 'StrongP@ss1';
+    const hostEmail = `host-${suffix}@example.test`;
+    const hostPassword = 'HostPass1';
+    const hostName = `Recepcionista ${suffix}`;
+    const httpServer = app.getHttpServer() as unknown as Parameters<
+      typeof request
+    >[0];
+
+    try {
+      await request(httpServer)
+        .post('/auth/register')
+        .send({
+          email: adminEmail,
+          phone: '+54 9 11 5555-4444',
+          restaurantName,
+          password: adminPassword,
+        })
+        .expect(201);
+
+      const adminLoginResponse = await request(httpServer)
+        .post('/auth/login')
+        .send({ email: adminEmail, password: adminPassword })
+        .expect(201);
+
+      const adminAccessToken = adminLoginResponse.body.accessToken as string;
+
+      await request(httpServer)
+        .post('/users/internal')
+        .set('Authorization', `Bearer ${adminAccessToken}`)
+        .send({
+          email: hostEmail,
+          fullName: hostName,
+          password: hostPassword,
+          role: 'host',
+        })
+        .expect(201);
+
+      const receptionistLoginResponse = await request(httpServer)
+        .post('/auth/login-recepcionista')
+        .send({
+          identifier: hostEmail,
+          password: hostPassword,
+        })
+        .expect(201);
+
+      expect(receptionistLoginResponse.body).toEqual(
+        expect.objectContaining({
+          accessToken: expect.any(String),
+          profile: expect.objectContaining({
+            email: hostEmail.toLowerCase(),
+            role: 'host',
+          }),
+        }),
+      );
+    } finally {
+      await dataSource.query('DELETE FROM users WHERE email IN ($1, $2)', [
+        adminEmail.toLowerCase(),
+        hostEmail.toLowerCase(),
+      ]);
+    }
+  });
 });

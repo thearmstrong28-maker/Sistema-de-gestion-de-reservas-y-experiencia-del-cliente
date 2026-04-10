@@ -19,7 +19,6 @@ const emptyCustomerState = {
   email: '',
   phone: '',
   preferences: '',
-  notes: '',
 }
 
 const buildCustomerPreview = (customer: Customer) => ({
@@ -75,7 +74,6 @@ export function CustomersPage() {
         email: customerForm.email.trim() || undefined,
         phone: customerForm.phone.trim() || undefined,
         preferences: parseJsonRecord(customerForm.preferences),
-        notes: customerForm.notes.trim() || undefined,
       }
 
       const { data } = await api.post<Customer>('/customers', payload)
@@ -167,17 +165,6 @@ export function CustomersPage() {
               }
             />
           </label>
-          <label>
-            Notas
-            <textarea
-              rows={3}
-              value={customerForm.notes}
-              onChange={(event) =>
-                setCustomerForm({ ...customerForm, notes: event.target.value })
-              }
-            />
-          </label>
-
           <button type="submit" className="button button-primary">
             Guardar cliente
           </button>

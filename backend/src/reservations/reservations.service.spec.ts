@@ -18,6 +18,7 @@ describe('ReservationsService', () => {
   let reservationRepository: {
     count: jest.Mock;
     create: jest.Mock;
+    find: jest.Mock;
     findOne: jest.Mock;
     save: jest.Mock;
   };
@@ -45,6 +46,7 @@ describe('ReservationsService', () => {
       create: jest.fn(
         (value: ReservationEntity | ReservationEntity[]) => value,
       ),
+      find: jest.fn(),
       findOne: jest.fn().mockResolvedValue(null),
       save: jest.fn(),
     };
@@ -187,6 +189,11 @@ describe('ReservationsService', () => {
         createdByUserId: 'user-admin-001',
       }),
     );
+    expect(tableRepository.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        order: { capacity: 'ASC', tableNumber: 'ASC', id: 'ASC' },
+      }),
+    );
     expect(reservation.id).toBe('reservation-1');
     expect(reservation.tableId).toBe('table-2');
   });
@@ -282,5 +289,22 @@ describe('ReservationsService', () => {
     });
 
     expect(assigned.tableId).toBe('table-3');
+  });
+
+  it('lists reservations for the selected day with relations', async () => {
+    reservationRepository.find.mockResolvedValue([{ id: 'reservation-1' }]);
+
+    await service.list({
+      date: new Date('2026-03-26T00:00:00.000Z'),
+      shiftId: 'shift-1',
+    });
+
+    expect(reservationRepository.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { reservationDate: '2026-03-26', shiftId: 'shift-1' },
+        relations: { customer: true, table: true, shift: true },
+        order: { startsAt: 'ASC', createdAt: 'ASC' },
+      }),
+    );
   });
 });

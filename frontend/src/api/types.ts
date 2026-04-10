@@ -6,6 +6,8 @@ export type ReservationStatus =
   | 'SEATED'
   | 'COMPLETED'
 
+export type ShiftSlot = 'matutino' | 'vespertino'
+
 export type WaitlistStatus =
   | 'waiting'
   | 'notified'
@@ -175,6 +177,21 @@ export interface LoginResponse {
   accessToken: string
 }
 
+export interface LoginManagerRequest {
+  fullName: string
+  password: string
+}
+
+export interface LoginReceptionistRequest {
+  identifier: string
+  password: string
+}
+
+export interface LoginReceptionistResponse {
+  accessToken: string
+  profile: AuthProfile
+}
+
 export interface RegisterRequest {
   email: string
   phone: string
@@ -261,7 +278,8 @@ export type VisitHistoryReservation = Reservation
 
 export interface CreateReservationRequest {
   customerId: string
-  shiftId: string
+  shiftId?: string
+  turno?: ShiftSlot
   partySize: number
   startsAt: string
   endsAt?: string
@@ -273,6 +291,7 @@ export interface CreateReservationRequest {
 export interface UpdateReservationRequest {
   customerId?: string
   shiftId?: string
+  turno?: ShiftSlot
   partySize?: number
   startsAt?: string
   endsAt?: string
@@ -281,12 +300,18 @@ export interface UpdateReservationRequest {
   notes?: string
 }
 
+export interface ListReservationsQuery {
+  date?: string
+  shiftId?: string
+}
+
 export interface AssignTableRequest {
   tableId?: string
 }
 
 export interface CheckAvailabilityRequest {
-  shiftId: string
+  shiftId?: string
+  turno?: ShiftSlot
   startsAt: string
   endsAt?: string
   partySize: number
@@ -332,10 +357,16 @@ export interface ListCustomersQuery {
 export interface CreateWaitlistEntryRequest {
   customerId: string
   requestedShiftId?: string
+  turno?: ShiftSlot
   requestedDate: string
   partySize: number
   position?: number
   notes?: string
+}
+
+export interface ListReservationsQuery {
+  date?: string
+  shiftId?: string
 }
 
 export interface UpdateWaitlistEntryRequest {

@@ -16,9 +16,15 @@ import {
 } from 'typeorm';
 import { CustomerEntity } from '../customers/entities/customer.entity';
 import { ShiftEntity } from '../shifts/entities/shift.entity';
+import {
+  buildShiftName,
+  SHIFT_SLOT_WINDOWS,
+  type ShiftSlot,
+} from '../shifts/shift-slot';
 import { AssignTableDto } from './dto/assign-table.dto';
 import { CheckAvailabilityDto } from './dto/check-availability.dto';
 import { CreateReservationDto } from './dto/create-reservation.dto';
+import { ListReservationsQueryDto } from './dto/list-reservations.query';
 import { UpdateReservationDto } from './dto/update-reservation.dto';
 import {
   ACTIVE_RESERVATION_STATUSES,
@@ -48,7 +54,11 @@ export class ReservationsService {
   ): Promise<ReservationEntity> {
     await this.ensureCustomerExists(createReservationDto.customerId);
 
-    const shift = await this.getShiftOrThrow(createReservationDto.shiftId);
+    const shift = await this.resolveShift(
+      createReservationDto.shiftId,
+      createReservationDto.turno,
+      createReservationDto.startsAt,
+    );
     const { startsAt, endsAt, reservationDate } = this.resolveReservationTiming(
       {
         startsAt: createReservationDto.startsAt,
@@ -96,6 +106,28 @@ export class ReservationsService {
     return this.saveReservation(reservation);
   }
 
+  async list(query: ListReservationsQueryDto): Promise<ReservationEntity[]> {
+    const reservationDate = query.date
+      ? query.date.toISOString().slice(0, 10)
+      : new Date().toISOString().slice(0, 10);
+
+    return this.reservationRepository.find({
+      where: {
+        reservationDate,
+        ...(query.shiftId ? { shiftId: query.shiftId } : {}),
+      },
+      relations: { customer: true, table: true, shift: true },
+      order: { startsAt: 'ASC', createdAt: 'ASC' },
+    });
+  }
+
+  async listTablesLayout(): Promise<RestaurantTableEntity[]> {
+    return this.tableRepository.find({
+      where: { isActive: true },
+      order: { posY: 'ASC', posX: 'ASC', tableNumber: 'ASC' },
+    });
+  }
+
   async update(
     id: string,
     updateReservationDto: UpdateReservationDto,
@@ -109,8 +141,10 @@ export class ReservationsService {
       await this.ensureCustomerExists(updateReservationDto.customerId);
     }
 
-    const shift = await this.getShiftOrThrow(
+    const shift = await this.resolveShift(
       updateReservationDto.shiftId ?? reservation.shiftId,
+      updateReservationDto.turno,
+      updateReservationDto.startsAt ?? reservation.startsAt,
     );
 
     const durationMs =
@@ -222,7 +256,11 @@ export class ReservationsService {
       area: string | null;
     }>;
   }> {
-    const shift = await this.getShiftOrThrow(query.shiftId);
+    const shift = await this.resolveShift(
+      query.shiftId,
+      query.turno,
+      query.startsAt,
+    );
 
     const { startsAt, endsAt, reservationDate } = this.resolveReservationTiming(
       {
@@ -245,7 +283,7 @@ export class ReservationsService {
         availabilityStatus: TableAvailabilityStatus.Disponible,
         capacity: MoreThan(query.partySize - 1),
       },
-      order: { capacity: 'ASC', tableNumber: 'ASC' },
+      order: { capacity: 'ASC', tableNumber: 'ASC', id: 'ASC' },
     });
 
     const availableTables: Array<{
@@ -316,6 +354,50 @@ export class ReservationsService {
       endsAt: normalizedEnd,
       reservationDate,
     };
+  }
+
+  private async resolveShift(
+    shiftId: string | undefined,
+    turno: ShiftSlot | undefined,
+    startsAt: Date,
+  ): Promise<ShiftEntity> {
+    if (shiftId) {
+      return this.getShiftOrThrow(shiftId);
+    }
+
+    if (!turno) {
+      throw new BadRequestException('ShiftId or turno is required');
+    }
+
+    const reservationDate = startsAt.toISOString().slice(0, 10);
+    const shiftName = buildShiftName(reservationDate, turno);
+    const window = SHIFT_SLOT_WINDOWS[turno];
+
+    const existing = await this.shiftRepository.findOne({
+      where: { shiftName },
+    });
+
+    if (existing) {
+      if (!existing.isActive) {
+        existing.isActive = true;
+        existing.shiftDate = reservationDate;
+        existing.startsAt = window.startsAt;
+        existing.endsAt = window.endsAt;
+        return this.shiftRepository.save(existing);
+      }
+
+      return existing;
+    }
+
+    const created = this.shiftRepository.create({
+      shiftName,
+      shiftDate: reservationDate,
+      startsAt: window.startsAt,
+      endsAt: window.endsAt,
+      isActive: true,
+    });
+
+    return this.shiftRepository.save(created);
   }
 
   private validateReservationWindow(startsAt: Date): void {
@@ -424,6 +506,7 @@ export class ReservationsService {
       order: {
         capacity: 'ASC',
         tableNumber: 'ASC',
+        id: 'ASC',
       },
     });
 

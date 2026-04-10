@@ -2,6 +2,9 @@ import { api } from './http'
 import type {
   AuthProfile,
   LoginRequest,
+  LoginManagerRequest,
+  LoginReceptionistRequest,
+  LoginReceptionistResponse,
   LoginResponse,
   RegisterRequest,
   RegisterResponse,
@@ -9,6 +12,20 @@ import type {
 
 export const login = async (payload: LoginRequest): Promise<LoginResponse> => {
   const { data } = await api.post<LoginResponse>('/auth/login', payload)
+  return data
+}
+
+export const loginManager = async (
+  payload: LoginManagerRequest,
+): Promise<LoginResponse> => {
+  const { data } = await api.post<LoginResponse>('/auth/login-gerente', payload)
+  return data
+}
+
+export const loginReceptionist = async (
+  payload: LoginReceptionistRequest,
+): Promise<LoginReceptionistResponse> => {
+  const { data } = await api.post<LoginReceptionistResponse>('/auth/login-recepcionista', payload)
   return data
 }
 
