@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
-import { IsInt, IsOptional, Min } from 'class-validator';
+import { IsEnum, IsInt, IsOptional, Min } from 'class-validator';
+import { TableCategory } from '../../reservations/enums/table-category.enum';
 
 export class CreateTablesBulkDto {
   @Type(() => Number)
@@ -12,4 +13,10 @@ export class CreateTablesBulkDto {
   @IsInt({ message: 'La capacidad debe ser un número entero.' })
   @Min(1, { message: 'La capacidad debe ser al menos 1.' })
   capacity?: number;
+
+  @IsOptional()
+  @IsEnum(TableCategory, {
+    message: 'La categoría seleccionada no es válida.',
+  })
+  category?: TableCategory;
 }

@@ -21,11 +21,14 @@ export type EditableUserRole = Exclude<UserRole, 'admin'>
 
 export type TableAvailabilityStatus = 'disponible' | 'ocupada'
 
+export type TableCategory = 'Normal' | 'Premium' | 'Privada'
+
 export interface RestaurantTable {
   id: string
   tableNumber: number
   area: string | null
   capacity: number
+  category: TableCategory
   availabilityStatus: TableAvailabilityStatus
   posX: number | null
   posY: number | null
@@ -227,6 +230,7 @@ export interface ListUsersQuery {
 export interface CreateTablesBulkRequest {
   quantity: number
   capacity?: number
+  category?: TableCategory
 }
 
 export interface TableDistributionItem {
@@ -234,6 +238,7 @@ export interface TableDistributionItem {
   capacity: number
   posX: number
   posY: number
+  category?: TableCategory
   layoutLabel?: string
 }
 
@@ -244,6 +249,7 @@ export interface CreateTablesDistributionRequest {
 export interface UpdateTableRequest {
   capacity?: number
   availabilityStatus?: TableAvailabilityStatus
+  category?: TableCategory
 }
 
 export type AvailabilityRequest = CheckAvailabilityRequest

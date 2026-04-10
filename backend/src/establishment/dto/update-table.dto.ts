@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import { IsEnum, IsInt, IsOptional, Min } from 'class-validator';
+import { TableCategory } from '../../reservations/enums/table-category.enum';
 import { TableAvailabilityStatus } from '../../reservations/enums/table-availability-status.enum';
 
 export class UpdateTableDto {
@@ -14,4 +15,10 @@ export class UpdateTableDto {
     message: 'La disponibilidad seleccionada no es válida.',
   })
   availabilityStatus?: TableAvailabilityStatus;
+
+  @IsOptional()
+  @IsEnum(TableCategory, {
+    message: 'La categoría seleccionada no es válida.',
+  })
+  category?: TableCategory;
 }

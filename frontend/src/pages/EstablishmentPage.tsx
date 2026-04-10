@@ -33,7 +33,7 @@ import type {
   ReportSnapshot,
   RestaurantTable,
   EditableUserRole,
-  TableAvailabilityStatus,
+  TableCategory,
   UpdateTableRequest,
   UpdateUserRequest,
 } from '../api/types'
@@ -69,10 +69,8 @@ interface TablesCreationForm {
 
 interface TableEditForm {
   capacity: string
-  availabilityStatus: TableAvailabilityStatus
+  category: TableCategory
 }
-
-type TableCategory = 'Normal' | 'Premium' | 'Privada'
 
 interface UserEditForm {
   fullName: string
@@ -104,7 +102,7 @@ const emptyTablesForm: TablesCreationForm = {
 
 const emptyTableEditForm: TableEditForm = {
   capacity: '4',
-  availabilityStatus: 'disponible',
+  category: 'Normal',
 }
 
 const emptyUserEditForm: UserEditForm = {
@@ -157,6 +155,7 @@ interface LayoutBounds {
 
 interface TableDragState {
   tableId: string
+  pointerId: number
   pointerOffsetX: number
   pointerOffsetY: number
   nodeHalfWidth: number
@@ -165,6 +164,8 @@ interface TableDragState {
 }
 
 const clamp = (value: number, min: number, max: number): number => Math.min(Math.max(value, min), max)
+
+const roundToLayoutUnit = (value: number): number => Math.round(value * 100) / 100
 
 const buildLayoutBounds = (tables: RestaurantTable[]): LayoutBounds => {
   if (!tables.length) {
@@ -195,27 +196,101 @@ const normalizeTableLayout = (table: RestaurantTable): RestaurantTable => ({
 
 const normalizeTablesLayout = (tables: RestaurantTable[]): RestaurantTable[] => tables.map(normalizeTableLayout)
 
-const hydrateTablesLayout = (tables: RestaurantTable[]): RestaurantTable[] => {
+const hasUsefulLayout = (tables: RestaurantTable[]): boolean => {
   const positionedTables = tables.filter((table) => table.posX !== null && table.posY !== null)
-  const hasPositionedTables = positionedTables.length > 0
-  const maxX = hasPositionedTables ? Math.max(...positionedTables.map((table) => table.posX ?? 0)) : 0
-  const maxY = hasPositionedTables ? Math.max(...positionedTables.map((table) => table.posY ?? 0)) : 0
 
-  let fallbackIndex = 0
+  if (positionedTables.length < 2) {
+    return false
+  }
 
-  return tables.map((table) => {
+  const bounds = buildLayoutBounds(positionedTables)
+  return bounds.maxX - bounds.minX > 0 || bounds.maxY - bounds.minY > 0
+}
+
+const buildCenteredPositions = (
+  count: number,
+  options?: {
+    centerX?: number
+    centerY?: number
+    spacingX?: number
+    spacingY?: number
+  },
+): Array<{ posX: number; posY: number }> => {
+  const centerX = options?.centerX ?? 0
+  const centerY = options?.centerY ?? 0
+  const spacingX = options?.spacingX ?? 2
+  const spacingY = options?.spacingY ?? 2
+  const columns = Math.max(1, Math.ceil(Math.sqrt(count)))
+
+  return Array.from({ length: count }, (_, index) => {
+    const row = Math.floor(index / columns)
+    const column = index % columns
+    const offsetX = column - (columns - 1) / 2
+    const offsetY = row - (Math.ceil(count / columns) - 1) / 2
+
+    return {
+      posX: roundToLayoutUnit(centerX + offsetX * spacingX),
+      posY: roundToLayoutUnit(centerY + offsetY * spacingY),
+    }
+  })
+}
+
+const hydrateTablesLayout = (tables: RestaurantTable[]): RestaurantTable[] => {
+  if (!tables.length) {
+    return []
+  }
+
+  if (!hasUsefulLayout(tables)) {
+    const centeredPositions = buildCenteredPositions(tables.length)
+
+    return tables.map((table, index) => ({
+      ...table,
+      posX: centeredPositions[index].posX,
+      posY: centeredPositions[index].posY,
+    }))
+  }
+
+  const normalizedTables = tables.map((table) => {
     if (table.posX !== null && table.posY !== null) {
       return normalizeTableLayout(table)
     }
 
-    const offset = fallbackIndex
-    fallbackIndex += 1
+    return {
+      ...table,
+      posX: null,
+      posY: null,
+    }
+  })
+
+  const positionedTables = normalizedTables.filter((table) => table.posX !== null && table.posY !== null)
+  const fallbackIndexes = normalizedTables
+    .map((table, index) => (table.posX === null || table.posY === null ? index : -1))
+    .filter((index) => index >= 0)
+
+  if (!fallbackIndexes.length) {
+    return normalizedTables as RestaurantTable[]
+  }
+
+  const bounds = buildLayoutBounds(positionedTables as RestaurantTable[])
+  const centeredPositions = buildCenteredPositions(fallbackIndexes.length, {
+    centerX: (bounds.minX + bounds.maxX) / 2,
+    centerY: (bounds.minY + bounds.maxY) / 2,
+    spacingX: Math.max(1, (bounds.maxX - bounds.minX) / 4),
+    spacingY: Math.max(1, (bounds.maxY - bounds.minY) / 4),
+  })
+
+  return normalizedTables.map((table, index) => {
+    const fallbackIndex = fallbackIndexes.indexOf(index)
+
+    if (fallbackIndex === -1) {
+      return table as RestaurantTable
+    }
 
     return {
       ...table,
-      posX: hasPositionedTables ? maxX + 1 + offset : offset,
-      posY: hasPositionedTables ? maxY + 1 + offset : offset,
-    }
+      posX: centeredPositions[fallbackIndex].posX,
+      posY: centeredPositions[fallbackIndex].posY,
+    } as RestaurantTable
   })
 }
 
@@ -277,6 +352,26 @@ const getAdminUnlockErrorMessage = (error: unknown): string => {
   }
 
   return getApiErrorMessage(error)
+}
+
+const decrementSummaryValue = (value: number): number => Math.max(0, value - 1)
+
+const updateSummaryAfterUserDeletion = (summary: EstablishmentSummary, user: AdminUser): EstablishmentSummary => {
+  const nextSummary: EstablishmentSummary = {
+    ...summary,
+    usersCount: decrementSummaryValue(summary.usersCount),
+    activeUsersCount: decrementSummaryValue(summary.activeUsersCount),
+  }
+
+  if (user.role === 'customer') {
+    nextSummary.customerUsersCount = decrementSummaryValue(summary.customerUsersCount)
+  }
+
+  if (user.role === 'host' || user.role === 'manager') {
+    nextSummary.internalUsersCount = decrementSummaryValue(summary.internalUsersCount)
+  }
+
+  return nextSummary
 }
 
 export function AdministrationPage() {
@@ -371,6 +466,24 @@ export function AdministrationPage() {
     [editableTables, selectedTableId],
   )
 
+  const visibleTableIdentifierById = useMemo(() => {
+    const sortedTables = [...editableTables].sort((left, right) => {
+      if (left.tableNumber !== right.tableNumber) {
+        return left.tableNumber - right.tableNumber
+      }
+
+      return left.id.localeCompare(right.id)
+    })
+
+    return new Map(sortedTables.map((table, index) => [table.id, formatTableIdentifier(index + 1)]))
+  }, [editableTables])
+
+  const getVisibleTableIdentifier = useCallback(
+    (table: Pick<RestaurantTable, 'id' | 'tableNumber'>) =>
+      visibleTableIdentifierById.get(table.id) ?? formatTableIdentifier(table.tableNumber),
+    [visibleTableIdentifierById],
+  )
+
   const loadOverview = useCallback(async () => {
     setEstablishmentState({
       status: 'loading',
@@ -403,10 +516,11 @@ export function AdministrationPage() {
 
     try {
       const data = await listUsers({ isActive: true })
+      const activeUsers = data.filter((user) => user.isActive === true)
       setUsersState({
         status: 'success',
         message: 'Listado de usuarios actualizado.',
-        data,
+        data: activeUsers,
       })
     } catch (error) {
       setUsersState({
@@ -431,7 +545,7 @@ export function AdministrationPage() {
     setEditingTableId(table.id)
     setTableEditForm({
       capacity: String(table.capacity),
-      availabilityStatus: getTableAvailabilityStatus(table),
+      category: table.category ?? 'Normal',
     })
     setSelectedTableId(table.id)
   }, [])
@@ -493,12 +607,20 @@ export function AdministrationPage() {
     }
 
     const handlePointerMove = (event: PointerEvent) => {
+      if (event.pointerId !== tableDragState.pointerId) {
+        return
+      }
+
       const stageElement = tablesStageRef.current
       if (!stageElement) {
         return
       }
 
       const stageRect = stageElement.getBoundingClientRect()
+      if (!stageRect.width || !stageRect.height) {
+        return
+      }
+
       const centerX = event.clientX - stageRect.left - tableDragState.pointerOffsetX
       const centerY = event.clientY - stageRect.top - tableDragState.pointerOffsetY
 
@@ -541,7 +663,11 @@ export function AdministrationPage() {
       setLayoutDirty(true)
     }
 
-    const handlePointerUp = () => {
+    const handlePointerUp = (event: PointerEvent) => {
+      if (event.pointerId !== tableDragState.pointerId) {
+        return
+      }
+
       setTableDragState(null)
     }
 
@@ -742,6 +868,14 @@ export function AdministrationPage() {
         ...state,
         data: state.data.filter((item) => item.id !== user.id),
       }))
+      setEstablishmentState((state) =>
+        state.data
+          ? {
+              ...state,
+              data: updateSummaryAfterUserDeletion(state.data, user),
+            }
+          : state,
+      )
       setUsersActionState({ status: 'success', message: 'Usuario dado de baja.' })
       if (editingUserId === user.id) {
         resetUserEditForm()
@@ -791,6 +925,7 @@ export function AdministrationPage() {
       const payload = {
         quantity: 1,
         capacity: parsePositiveInteger(tablesForm.capacity, 2),
+        category: tablesForm.category,
       }
 
       const createdTables = await createTablesBulk(payload)
@@ -811,7 +946,7 @@ export function AdministrationPage() {
       setSelectedTableId(createdTables[0]?.id ?? '')
       setTablesActionState({
         status: 'success',
-        message: `Mesa ${tablesForm.category.toLowerCase()} creada correctamente.`,
+        message: `Mesa ${tablesForm.category} creada correctamente.`,
       })
       await Promise.all([loadTables(), loadOverview()])
     } catch (error) {
@@ -823,6 +958,8 @@ export function AdministrationPage() {
   }
 
   const handleTablePointerDown = (event: ReactPointerEvent<HTMLButtonElement>, tableId: string) => {
+    event.preventDefault()
+
     const stageElement = tablesStageRef.current
     if (!stageElement) {
       return
@@ -853,9 +990,11 @@ export function AdministrationPage() {
     const centerY = (tableTopPercent / 100) * stageRect.height
     const nodeRect = event.currentTarget.getBoundingClientRect()
 
+    event.currentTarget.setPointerCapture(event.pointerId)
     setSelectedTableId(tableId)
     setTableDragState({
       tableId,
+      pointerId: event.pointerId,
       pointerOffsetX: event.clientX - stageRect.left - centerX,
       pointerOffsetY: event.clientY - stageRect.top - centerY,
       nodeHalfWidth: nodeRect.width / 2,
@@ -878,6 +1017,7 @@ export function AdministrationPage() {
           capacity: table.capacity,
           posX: table.posX,
           posY: table.posY,
+          category: table.category ?? 'Normal',
           ...(table.layoutLabel ? { layoutLabel: table.layoutLabel } : {}),
         })),
       }
@@ -899,14 +1039,31 @@ export function AdministrationPage() {
     }
   }
 
-  const handleUpdateTable = async (event: FormEvent<HTMLFormElement>, tableId: string) => {
-    event.preventDefault()
+  const handleUpdateTable = async (tableId: string) => {
+    const parsedCapacity = Number(tableEditForm.capacity)
+    if (!Number.isInteger(parsedCapacity) || parsedCapacity < 1) {
+      setTablesActionState({
+        status: 'error',
+        message: 'La capacidad debe ser un número entero mayor o igual a 1.',
+      })
+      return
+    }
+
+    if (!tableCategories.some((category) => category.value === tableEditForm.category)) {
+      setTablesActionState({
+        status: 'error',
+        message: 'La categoría seleccionada no es válida.',
+      })
+      return
+    }
+
+    setUpdatingTableId(tableId)
     setTablesActionState({ status: 'loading', message: 'Guardando cambios de la mesa...' })
 
     try {
       const payload: UpdateTableRequest = {
-        capacity: parsePositiveInteger(tableEditForm.capacity, 1),
-        availabilityStatus: tableEditForm.availabilityStatus,
+        capacity: parsedCapacity,
+        category: tableEditForm.category,
       }
 
       const updatedTable = normalizeTableLayout(await updateTable(tableId, payload))
@@ -918,14 +1075,55 @@ export function AdministrationPage() {
         data: state.data.map((item) => (item.id === tableId ? updatedTable : item)),
       }))
       await loadTables({ silent: true })
-      resetTableEditForm()
-      setTablesActionState({ status: 'success', message: 'Mesa actualizada correctamente.' })
+      setTableEditForm({
+        capacity: String(updatedTable.capacity),
+        category: updatedTable.category ?? 'Normal',
+      })
+      setTablesActionState({
+        status: 'success',
+        message: `Mesa ${getVisibleTableIdentifier(updatedTable)} actualizada correctamente. Listado y maqueta sincronizados.`,
+      })
     } catch (error) {
       setTablesActionState({
         status: 'error',
-        message: getApiErrorMessage(error),
+        message: `No se pudieron guardar los cambios de la mesa: ${getApiErrorMessage(error)}`,
       })
+    } finally {
+      setUpdatingTableId(null)
     }
+  }
+
+  const resolveTableIdForSave = (fallbackTableId: string): string | null => {
+    const existingTableIds = new Set(editableTables.map((table) => table.id))
+
+    if (editingTableId && existingTableIds.has(editingTableId)) {
+      return editingTableId
+    }
+
+    if (existingTableIds.has(fallbackTableId)) {
+      return fallbackTableId
+    }
+
+    return null
+  }
+
+  const triggerTableSave = (fallbackTableId: string, event?: FormEvent<HTMLFormElement>) => {
+    event?.preventDefault()
+
+    const targetTableId = resolveTableIdForSave(fallbackTableId)
+    if (!targetTableId) {
+      setTablesActionState({
+        status: 'error',
+        message: 'No se pudo identificar el ID real de la mesa para guardar cambios.',
+      })
+      return
+    }
+
+    if (updatingTableId === targetTableId) {
+      return
+    }
+
+    void handleUpdateTable(targetTableId)
   }
 
   const handleToggleTableAvailability = async (table: RestaurantTable) => {
@@ -935,7 +1133,7 @@ export function AdministrationPage() {
     setUpdatingTableId(table.id)
     setTablesActionState({
       status: 'loading',
-      message: `Actualizando la disponibilidad de ${formatTableIdentifier(table.tableNumber)}...`,
+      message: `Actualizando la disponibilidad de ${getVisibleTableIdentifier(table)}...`,
     })
 
     try {
@@ -948,16 +1146,10 @@ export function AdministrationPage() {
         ...state,
         data: state.data.map((item) => (item.id === table.id ? normalizedTable : item)),
       }))
-      if (editingTableId === table.id) {
-        setTableEditForm((previousForm) => ({
-          ...previousForm,
-          availabilityStatus: nextAvailability,
-        }))
-      }
       await loadTables({ silent: true })
       setTablesActionState({
         status: 'success',
-        message: `La mesa ${formatTableIdentifier(table.tableNumber)} ahora está ${formatTableAvailabilityStatus(nextAvailability)}.`,
+        message: `La mesa ${getVisibleTableIdentifier(table)} ahora está ${formatTableAvailabilityStatus(nextAvailability)}.`,
       })
     } catch (error) {
       setTablesActionState({
@@ -970,7 +1162,7 @@ export function AdministrationPage() {
   }
 
   const handleDeleteTable = async (table: RestaurantTable) => {
-    if (!window.confirm(`Eliminar la mesa ${formatTableIdentifier(table.tableNumber)}?`)) {
+    if (!window.confirm(`Eliminar la mesa ${getVisibleTableIdentifier(table)}?`)) {
       return
     }
 
@@ -993,7 +1185,7 @@ export function AdministrationPage() {
       await loadTables({ silent: true })
       setTablesActionState({
         status: 'success',
-        message: `La mesa ${formatTableIdentifier(table.tableNumber)} fue eliminada.`,
+        message: `La mesa ${getVisibleTableIdentifier(table)} fue eliminada.`,
       })
       await loadOverview()
     } catch (error) {
@@ -1028,11 +1220,24 @@ export function AdministrationPage() {
     }
   }
 
+  const visibleTablesCount =
+    tablesState.status === 'success' ? editableTables.length : (establishmentState.data?.activeTablesCount ?? 0)
+
+  const availableVisibleTablesCount =
+    tablesState.status === 'success'
+      ? editableTables.filter(
+          (table) => table.isActive === true && table.availabilityStatus === 'disponible',
+        ).length
+      : (establishmentState.data?.activeTablesCount ?? 0)
+
+  const activeUsersCount =
+    usersState.status === 'success' ? usersState.data.length : (establishmentState.data?.activeUsersCount ?? 0)
+
   const overviewCards = [
-    { label: 'Usuarios', value: establishmentState.data?.usersCount ?? 0 },
-    { label: 'Activos', value: establishmentState.data?.activeUsersCount ?? 0 },
-    { label: 'Mesas', value: establishmentState.data?.tablesCount ?? 0 },
-    { label: 'Mesas activas', value: establishmentState.data?.activeTablesCount ?? 0 },
+    { label: 'Usuarios', value: activeUsersCount },
+    { label: 'Activos', value: activeUsersCount },
+    { label: 'Mesas', value: visibleTablesCount },
+    { label: 'Mesas disponibles', value: availableVisibleTablesCount },
     { label: 'Reservas', value: establishmentState.data?.reservationsCount ?? 0 },
     { label: 'Clientes', value: establishmentState.data?.customerUsersCount ?? 0 },
   ]
@@ -1403,16 +1608,12 @@ export function AdministrationPage() {
                 <span className="tables-legend-dot tables-legend-dot-ocupada" aria-hidden="true" />
                 Ocupada
               </span>
-              <span className="tables-legend-item">
-                <span className="tables-legend-dot tables-legend-dot-seleccionada" aria-hidden="true" />
-                Seleccionada
-              </span>
             </div>
 
             {editableTables.length ? (
               <div
                 ref={tablesStageRef}
-                className="tables-stage tables-stage-large"
+                className={tableDragState ? 'tables-stage tables-stage-large tables-stage-dragging' : 'tables-stage tables-stage-large'}
                 role="img"
                 aria-label="Maqueta de distribución de mesas"
               >
@@ -1432,7 +1633,7 @@ export function AdministrationPage() {
                     STAGE_RANGE_Y_PERCENT,
                   )
                   const availability = getTableAvailabilityStatus(table)
-                  const tableIdentifier = formatTableIdentifier(table.tableNumber)
+                  const tableIdentifier = getVisibleTableIdentifier(table)
                   const isSelected = (selectedTableId || editableTables[0]?.id) === table.id
 
                   return (
@@ -1448,7 +1649,7 @@ export function AdministrationPage() {
                       style={{ left: `${left}%`, top: `${top}%` }}
                       onClick={() => setSelectedTableId(table.id)}
                       onPointerDown={(event) => handleTablePointerDown(event, table.id)}
-                      aria-label={`${tableIdentifier}, ${table.capacity} plazas, ${formatTableAvailabilityStatus(availability)}`}
+                      aria-label={`${tableIdentifier}, ${table.capacity} plazas, ${table.category ?? 'Normal'}, ${formatTableAvailabilityStatus(availability)}`}
                     >
                       <span>{tableIdentifier}</span>
                     </button>
@@ -1461,8 +1662,11 @@ export function AdministrationPage() {
 
             {selectedTable ? (
               <div className="selected-table-card">
-                <p className="eyebrow">{formatTableIdentifier(selectedTable.tableNumber)}</p>
+                <p className="eyebrow">{getVisibleTableIdentifier(selectedTable)}</p>
                 <h3>{selectedTable.capacity} plazas</h3>
+                <p className="muted">
+                  Categoría: {selectedTable.category ?? 'Normal'}
+                </p>
                 <p className="muted">
                   Estado: {formatTableAvailabilityStatus(getTableAvailabilityStatus(selectedTable))}
                 </p>
@@ -1529,6 +1733,7 @@ export function AdministrationPage() {
                     <tr>
                       <th>Mesa</th>
                       <th>Capacidad</th>
+                      <th>Categoría</th>
                       <th>Disponibilidad</th>
                       <th>Acciones</th>
                     </tr>
@@ -1537,7 +1742,7 @@ export function AdministrationPage() {
                     {editableTables.length ? (
                       editableTables.map((table) => {
                         const availability = getTableAvailabilityStatus(table)
-                        const tableIdentifier = formatTableIdentifier(table.tableNumber)
+                        const tableIdentifier = getVisibleTableIdentifier(table)
                         const isEditingTable = editingTableId === table.id
 
                         return (
@@ -1547,6 +1752,7 @@ export function AdministrationPage() {
                                 <strong>{tableIdentifier}</strong>
                               </td>
                               <td>{table.capacity}</td>
+                              <td>{table.category ?? 'Normal'}</td>
                               <td>{formatTableAvailabilityStatus(availability)}</td>
                               <td>
                                 <div className="table-actions">
@@ -1594,11 +1800,8 @@ export function AdministrationPage() {
                             </tr>
                             {isEditingTable ? (
                               <tr className="table-edit-row">
-                                <td colSpan={4}>
-                                  <form
-                                    className="form-panel table-edit-form"
-                                    onSubmit={(event) => void handleUpdateTable(event, table.id)}
-                                  >
+                                <td colSpan={5}>
+                                  <form className="form-panel table-edit-form" onSubmit={(event) => triggerTableSave(table.id, event)}>
                                     <div className="form-grid">
                                       <label>
                                         Capacidad
@@ -1617,30 +1820,39 @@ export function AdministrationPage() {
                                       </label>
 
                                       <label>
-                                        Disponibilidad
+                                        Categoría
                                         <select
-                                          value={tableEditForm.availabilityStatus}
+                                          value={tableEditForm.category}
                                           onChange={(event) =>
                                             setTableEditForm({
                                               ...tableEditForm,
-                                              availabilityStatus: event.target.value as TableAvailabilityStatus,
+                                              category: event.target.value as TableCategory,
                                             })
                                           }
                                         >
-                                          <option value="disponible">Disponible</option>
-                                          <option value="ocupada">Ocupada</option>
+                                          {tableCategories.map((category) => (
+                                            <option key={category.value} value={category.value}>
+                                              {category.label}
+                                            </option>
+                                          ))}
                                         </select>
                                       </label>
                                     </div>
 
                                     <div className="button-row">
-                                      <button type="submit" className="button button-primary button-tight">
+                                      <button
+                                        type="button"
+                                        className="button button-primary button-tight"
+                                        onClick={() => triggerTableSave(table.id)}
+                                        disabled={updatingTableId === table.id}
+                                      >
                                         Guardar cambios
                                       </button>
                                       <button
                                         type="button"
                                         className="button button-ghost button-tight"
                                         onClick={resetTableEditForm}
+                                        disabled={updatingTableId === table.id}
                                       >
                                         Cancelar
                                       </button>
@@ -1654,7 +1866,7 @@ export function AdministrationPage() {
                       })
                     ) : (
                       <tr>
-                        <td colSpan={4}>Sin mesas para mostrar.</td>
+                        <td colSpan={5}>Sin mesas para mostrar.</td>
                       </tr>
                     )}
                   </tbody>

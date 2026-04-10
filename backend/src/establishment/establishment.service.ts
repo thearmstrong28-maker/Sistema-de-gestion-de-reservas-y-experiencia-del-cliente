@@ -9,6 +9,7 @@ import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interfa
 import { Role } from '../auth/enums/role.enum';
 import { ReservationEntity } from '../reservations/entities/reservation.entity';
 import { RestaurantTableEntity } from '../reservations/entities/table.entity';
+import { TableCategory } from '../reservations/enums/table-category.enum';
 import { TableAvailabilityStatus } from '../reservations/enums/table-availability-status.enum';
 import { UserEntity } from '../auth/entities/user.entity';
 import { CreateTablesBulkDto } from './dto/create-tables-bulk.dto';
@@ -113,7 +114,8 @@ export class EstablishmentService {
   ): Promise<RestaurantTableEntity> {
     if (
       payload.capacity === undefined &&
-      payload.availabilityStatus === undefined
+      payload.availabilityStatus === undefined &&
+      payload.category === undefined
     ) {
       throw new BadRequestException(
         'Debés enviar al menos un dato para actualizar la mesa',
@@ -138,6 +140,10 @@ export class EstablishmentService {
 
     if (payload.availabilityStatus !== undefined) {
       table.availabilityStatus = payload.availabilityStatus;
+    }
+
+    if (payload.category !== undefined) {
+      table.category = payload.category;
     }
 
     return this.tableRepository.save(table);
@@ -165,6 +171,7 @@ export class EstablishmentService {
     }
 
     const capacity = payload.capacity ?? 2;
+    const category = payload.category ?? TableCategory.Normal;
 
     return this.dataSource.transaction(async (manager) => {
       await manager.query('SELECT pg_advisory_xact_lock($1)', [914_202_601]);
@@ -178,6 +185,7 @@ export class EstablishmentService {
         manager.create(RestaurantTableEntity, {
           tableNumber: startNumber + index,
           capacity,
+          category,
           availabilityStatus: TableAvailabilityStatus.Disponible,
           posX: (index % 6) * 120,
           posY: Math.floor(index / 6) * 120,
@@ -205,13 +213,14 @@ export class EstablishmentService {
       for (const table of payload.tables) {
         await manager.query(
           `
-            INSERT INTO restaurant_tables (table_number, capacity, pos_x, pos_y, layout_label, is_active)
-            VALUES ($1, $2, $3, $4, $5, true)
+            INSERT INTO restaurant_tables (table_number, capacity, pos_x, pos_y, layout_label, category, is_active)
+            VALUES ($1, $2, $3, $4, $5, $6, true)
             ON CONFLICT (table_number)
             DO UPDATE SET
               capacity = EXCLUDED.capacity,
               pos_x = EXCLUDED.pos_x,
               pos_y = EXCLUDED.pos_y,
+              category = EXCLUDED.category,
               layout_label = EXCLUDED.layout_label,
               is_active = true,
               updated_at = NOW()
@@ -222,6 +231,7 @@ export class EstablishmentService {
             table.posX,
             table.posY,
             table.layoutLabel?.trim() || null,
+            table.category ?? TableCategory.Normal,
           ],
         );
       }

@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import {
   IsArray,
+  IsEnum,
   IsInt,
   IsNotEmpty,
   IsOptional,
@@ -9,6 +10,7 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
+import { TableCategory } from '../../reservations/enums/table-category.enum';
 
 export class TableDistributionItemDto {
   @Type(() => Number)
@@ -23,13 +25,17 @@ export class TableDistributionItemDto {
 
   @Type(() => Number)
   @IsInt({ message: 'La posición X debe ser un número entero.' })
-  @Min(0, { message: 'La posición X no puede ser negativa.' })
   posX: number;
 
   @Type(() => Number)
   @IsInt({ message: 'La posición Y debe ser un número entero.' })
-  @Min(0, { message: 'La posición Y no puede ser negativa.' })
   posY: number;
+
+  @IsOptional()
+  @IsEnum(TableCategory, {
+    message: 'La categoría seleccionada no es válida.',
+  })
+  category?: TableCategory;
 
   @IsOptional()
   @IsString({ message: 'La etiqueta de sector debe ser texto.' })

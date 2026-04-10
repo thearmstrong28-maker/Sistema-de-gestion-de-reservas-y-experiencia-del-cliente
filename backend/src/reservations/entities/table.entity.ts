@@ -8,6 +8,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { ReservationEntity } from './reservation.entity';
+import { TableCategory } from '../enums/table-category.enum';
 import { TableAvailabilityStatus } from '../enums/table-availability-status.enum';
 
 @Entity({ name: 'restaurant_tables' })
@@ -24,6 +25,15 @@ export class RestaurantTableEntity {
 
   @Column({ type: 'int' })
   capacity: number;
+
+  @Column({
+    name: 'category',
+    type: 'enum',
+    enum: TableCategory,
+    enumName: 'table_category',
+    default: TableCategory.Normal,
+  })
+  category: TableCategory;
 
   @Column({
     name: 'availability_status',

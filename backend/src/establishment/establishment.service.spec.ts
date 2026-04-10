@@ -4,6 +4,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { ReservationEntity } from '../reservations/entities/reservation.entity';
 import { RestaurantTableEntity } from '../reservations/entities/table.entity';
+import { TableCategory } from '../reservations/enums/table-category.enum';
 import { TableAvailabilityStatus } from '../reservations/enums/table-availability-status.enum';
 import { UserEntity } from '../auth/entities/user.entity';
 import { EstablishmentService } from './establishment.service';
@@ -52,10 +53,11 @@ describe('EstablishmentService', () => {
     service = module.get(EstablishmentService);
   });
 
-  it('updates table capacity and availability', async () => {
+  it('updates table capacity, availability and category', async () => {
     tableRepository.findOne.mockResolvedValueOnce({
       id: 'table-1',
       capacity: 4,
+      category: TableCategory.Normal,
       availabilityStatus: TableAvailabilityStatus.Disponible,
       isActive: true,
     });
@@ -66,6 +68,7 @@ describe('EstablishmentService', () => {
     const updated = await service.updateTable('table-1', {
       capacity: 6,
       availabilityStatus: TableAvailabilityStatus.Ocupada,
+      category: TableCategory.Premium,
     });
 
     expect(tableRepository.findOne).toHaveBeenCalledWith({
@@ -75,10 +78,36 @@ describe('EstablishmentService', () => {
       expect.objectContaining({
         capacity: 6,
         availabilityStatus: TableAvailabilityStatus.Ocupada,
+        category: TableCategory.Premium,
       }),
     );
     expect(updated.capacity).toBe(6);
     expect(updated.availabilityStatus).toBe(TableAvailabilityStatus.Ocupada);
+    expect(updated.category).toBe(TableCategory.Premium);
+  });
+
+  it('updates only the table category when requested', async () => {
+    tableRepository.findOne.mockResolvedValueOnce({
+      id: 'table-1',
+      capacity: 4,
+      category: TableCategory.Normal,
+      availabilityStatus: TableAvailabilityStatus.Disponible,
+      isActive: true,
+    });
+    tableRepository.save.mockImplementation((value: RestaurantTableEntity) =>
+      Promise.resolve(value),
+    );
+
+    const updated = await service.updateTable('table-1', {
+      category: TableCategory.Privada,
+    });
+
+    expect(tableRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        category: TableCategory.Privada,
+      }),
+    );
+    expect(updated.category).toBe(TableCategory.Privada);
   });
 
   it('toggles table availability through the dedicated endpoint logic', async () => {
