@@ -1,4 +1,4 @@
-import type { ReservationStatus, UserRole, WaitlistStatus } from '../api/types'
+import type { ReservationStatus, TableAvailabilityStatus, UserRole, WaitlistStatus } from '../api/types'
 
 export const formatReservationStatus = (status: ReservationStatus): string => {
   switch (status) {
@@ -42,5 +42,16 @@ export const formatUserRole = (role: UserRole): string => {
       return 'Gerente'
     case 'customer':
       return 'Cliente'
+  }
+}
+
+export const formatTableIdentifier = (tableNumber: number): string => `M${String(tableNumber).padStart(2, '0')}`
+
+export const formatTableAvailabilityStatus = (status: TableAvailabilityStatus): string => {
+  switch (status) {
+    case 'disponible':
+      return 'Disponible'
+    case 'ocupada':
+      return 'Ocupada'
   }
 }

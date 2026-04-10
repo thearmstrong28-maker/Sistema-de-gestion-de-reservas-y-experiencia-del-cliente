@@ -8,6 +8,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { ReservationEntity } from './reservation.entity';
+import { TableAvailabilityStatus } from '../enums/table-availability-status.enum';
 
 @Entity({ name: 'restaurant_tables' })
 @Index(['tableNumber'], { unique: true })
@@ -23,6 +24,14 @@ export class RestaurantTableEntity {
 
   @Column({ type: 'int' })
   capacity: number;
+
+  @Column({
+    name: 'availability_status',
+    type: 'enum',
+    enum: TableAvailabilityStatus,
+    default: TableAvailabilityStatus.Disponible,
+  })
+  availabilityStatus: TableAvailabilityStatus;
 
   @Column({ name: 'pos_x', type: 'int', nullable: true })
   posX?: number | null;

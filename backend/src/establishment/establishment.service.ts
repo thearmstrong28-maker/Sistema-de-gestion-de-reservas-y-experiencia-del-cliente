@@ -1,16 +1,23 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { Role } from '../auth/enums/role.enum';
 import { ReservationEntity } from '../reservations/entities/reservation.entity';
 import { RestaurantTableEntity } from '../reservations/entities/table.entity';
+import { TableAvailabilityStatus } from '../reservations/enums/table-availability-status.enum';
 import { UserEntity } from '../auth/entities/user.entity';
 import { CreateTablesBulkDto } from './dto/create-tables-bulk.dto';
 import {
   CreateTablesDistributionDto,
   TableDistributionItemDto,
 } from './dto/create-tables-distribution.dto';
+import { UpdateTableAvailabilityDto } from './dto/update-table-availability.dto';
+import { UpdateTableDto } from './dto/update-table.dto';
 
 export interface EstablishmentSummary {
   restaurantName: string;
@@ -79,8 +86,75 @@ export class EstablishmentService {
 
   async listTables(): Promise<RestaurantTableEntity[]> {
     return this.tableRepository.find({
+      where: { isActive: true },
       order: { posY: 'ASC', posX: 'ASC', tableNumber: 'ASC' },
     });
+  }
+
+  async updateTableAvailability(
+    id: string,
+    payload: UpdateTableAvailabilityDto,
+  ): Promise<RestaurantTableEntity> {
+    const table = await this.tableRepository.findOne({
+      where: { id, isActive: true },
+    });
+
+    if (!table) {
+      throw new NotFoundException('La mesa no existe');
+    }
+
+    table.availabilityStatus = payload.availabilityStatus;
+    return this.tableRepository.save(table);
+  }
+
+  async updateTable(
+    id: string,
+    payload: UpdateTableDto,
+  ): Promise<RestaurantTableEntity> {
+    if (
+      payload.capacity === undefined &&
+      payload.availabilityStatus === undefined
+    ) {
+      throw new BadRequestException(
+        'Debés enviar al menos un dato para actualizar la mesa',
+      );
+    }
+
+    const table = await this.tableRepository.findOne({
+      where: { id, isActive: true },
+    });
+
+    if (!table) {
+      throw new NotFoundException('La mesa no existe');
+    }
+
+    if (payload.capacity !== undefined) {
+      if (payload.capacity < 1) {
+        throw new BadRequestException('La capacidad debe ser al menos 1');
+      }
+
+      table.capacity = payload.capacity;
+    }
+
+    if (payload.availabilityStatus !== undefined) {
+      table.availabilityStatus = payload.availabilityStatus;
+    }
+
+    return this.tableRepository.save(table);
+  }
+
+  async deleteTable(id: string): Promise<RestaurantTableEntity> {
+    const table = await this.tableRepository.findOne({
+      where: { id, isActive: true },
+    });
+
+    if (!table) {
+      throw new NotFoundException('La mesa no existe');
+    }
+
+    table.isActive = false;
+    table.availabilityStatus = TableAvailabilityStatus.Disponible;
+    return this.tableRepository.save(table);
   }
 
   async createTablesBulk(
@@ -104,6 +178,7 @@ export class EstablishmentService {
         manager.create(RestaurantTableEntity, {
           tableNumber: startNumber + index,
           capacity,
+          availabilityStatus: TableAvailabilityStatus.Disponible,
           posX: (index % 6) * 120,
           posY: Math.floor(index / 6) * 120,
           layoutLabel: 'Principal',

@@ -14,6 +14,8 @@ import type {
   RestaurantTable,
   FrequentCustomerRow,
   FrequentCustomersQuery,
+  TableAvailabilityStatus,
+  UpdateTableRequest,
   UpdateUserRequest,
 } from './types'
 
@@ -90,6 +92,29 @@ export const createTablesDistribution = async (
   payload: CreateTablesDistributionRequest,
 ): Promise<RestaurantTable[]> => {
   const { data } = await api.post<RestaurantTable[]>('/establishment/tables/distribution', payload)
+  return data
+}
+
+export const updateTableAvailability = async (
+  id: string,
+  availabilityStatus: TableAvailabilityStatus,
+): Promise<RestaurantTable> => {
+  const { data } = await api.patch<RestaurantTable>(`/establishment/tables/${id}/availability`, {
+    availabilityStatus,
+  })
+  return data
+}
+
+export const updateTable = async (
+  id: string,
+  payload: UpdateTableRequest,
+): Promise<RestaurantTable> => {
+  const { data } = await api.patch<RestaurantTable>(`/establishment/tables/${id}`, payload)
+  return data
+}
+
+export const deleteTable = async (id: string): Promise<RestaurantTable> => {
+  const { data } = await api.delete<RestaurantTable>(`/establishment/tables/${id}`)
   return data
 }
 

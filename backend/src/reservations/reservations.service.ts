@@ -26,6 +26,7 @@ import {
 } from './enums/reservation-status.enum';
 import { ReservationEntity } from './entities/reservation.entity';
 import { RestaurantTableEntity } from './entities/table.entity';
+import { TableAvailabilityStatus } from './enums/table-availability-status.enum';
 
 @Injectable()
 export class ReservationsService {
@@ -239,7 +240,11 @@ export class ReservationsService {
     );
 
     const tables = await this.tableRepository.find({
-      where: { isActive: true, capacity: MoreThan(query.partySize - 1) },
+      where: {
+        isActive: true,
+        availabilityStatus: TableAvailabilityStatus.Disponible,
+        capacity: MoreThan(query.partySize - 1),
+      },
       order: { capacity: 'ASC', tableNumber: 'ASC' },
     });
 
@@ -383,6 +388,12 @@ export class ReservationsService {
         throw new NotFoundException('Requested table not found or inactive');
       }
 
+      if (preferred.availabilityStatus === TableAvailabilityStatus.Ocupada) {
+        throw new ConflictException(
+          'Requested table is not available for this slot',
+        );
+      }
+
       const preferredIsValid =
         preferred.capacity >= partySize &&
         !(await this.isTableOccupied(
@@ -407,6 +418,7 @@ export class ReservationsService {
     const candidates = await this.tableRepository.find({
       where: {
         isActive: true,
+        availabilityStatus: TableAvailabilityStatus.Disponible,
         capacity: MoreThan(partySize - 1),
       },
       order: {

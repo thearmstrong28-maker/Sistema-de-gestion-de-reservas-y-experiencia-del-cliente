@@ -19,11 +19,14 @@ export type InternalUserRole = 'host' | 'manager'
 
 export type EditableUserRole = Exclude<UserRole, 'admin'>
 
+export type TableAvailabilityStatus = 'disponible' | 'ocupada'
+
 export interface RestaurantTable {
   id: string
   tableNumber: number
   area: string | null
   capacity: number
+  availabilityStatus: TableAvailabilityStatus
   posX: number | null
   posY: number | null
   layoutLabel: string | null
@@ -236,6 +239,11 @@ export interface TableDistributionItem {
 
 export interface CreateTablesDistributionRequest {
   tables: TableDistributionItem[]
+}
+
+export interface UpdateTableRequest {
+  capacity?: number
+  availabilityStatus?: TableAvailabilityStatus
 }
 
 export type AvailabilityRequest = CheckAvailabilityRequest

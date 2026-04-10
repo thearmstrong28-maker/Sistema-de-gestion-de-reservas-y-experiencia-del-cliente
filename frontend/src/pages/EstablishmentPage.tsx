@@ -1,9 +1,11 @@
-import { Fragment, useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import axios from 'axios'
 import {
   createInternalUser,
+  createTablesBulk,
   createTablesDistribution,
   deleteReportSnapshot,
+  deleteTable,
   deleteUser,
   fetchDailyReportComparison,
   fetchDailyReportSummary,
@@ -12,6 +14,8 @@ import {
   listReportSnapshots,
   listTables,
   listUsers,
+  updateTableAvailability,
+  updateTable,
   updateUser,
 } from '../api/admin'
 import { verifyAdminPassword } from '../api/auth'
@@ -28,17 +32,19 @@ import type {
   InternalUserRole,
   ReportSnapshot,
   RestaurantTable,
-  TableDistributionItem,
   EditableUserRole,
+  TableAvailabilityStatus,
+  UpdateTableRequest,
   UpdateUserRequest,
 } from '../api/types'
 import { StatusMessage } from '../components/StatusMessage'
 import { formatDateTime, formatPercent } from '../lib/format'
-import { formatUserRole } from '../lib/labels'
+import { formatTableAvailabilityStatus, formatTableIdentifier, formatUserRole } from '../lib/labels'
 import { omitEmptyString } from '../lib/forms'
 import { useAuthStore } from '../store/auth'
 import editIcon from '../assets/icon-edit.png'
 import deleteIcon from '../assets/icon-delete.png'
+import availabilityIcon from '../assets/icon-availability.png'
 
 type Status = 'idle' | 'loading' | 'success' | 'error'
 type AdminTab = 'usuarios' | 'mesas' | 'reportes'
@@ -56,15 +62,17 @@ interface ReportFilters {
   limit: string
 }
 
-interface TablesDistributionForm {
-  quantity: string
+interface TablesCreationForm {
   capacity: string
-  startNumber: string
-  columns: string
-  spacingX: string
-  spacingY: string
-  layoutLabel: string
+  category: TableCategory
 }
+
+interface TableEditForm {
+  capacity: string
+  availabilityStatus: TableAvailabilityStatus
+}
+
+type TableCategory = 'Normal' | 'Premium' | 'Privada'
 
 interface UserEditForm {
   fullName: string
@@ -83,14 +91,20 @@ const emptyCreateUserForm = {
   role: 'host' as InternalUserRole,
 }
 
-const emptyDistributionForm: TablesDistributionForm = {
-  quantity: '4',
+const tableCategories: Array<{ value: TableCategory; label: string }> = [
+  { value: 'Normal', label: 'Normal' },
+  { value: 'Premium', label: 'Premium' },
+  { value: 'Privada', label: 'Privada' },
+]
+
+const emptyTablesForm: TablesCreationForm = {
   capacity: '4',
-  startNumber: '1',
-  columns: '4',
-  spacingX: '120',
-  spacingY: '120',
-  layoutLabel: 'Principal',
+  category: 'Normal',
+}
+
+const emptyTableEditForm: TableEditForm = {
+  capacity: '4',
+  availabilityStatus: 'disponible',
 }
 
 const emptyUserEditForm: UserEditForm = {
@@ -128,6 +142,128 @@ const parsePositiveInteger = (value: string, fallback: number): number => {
 
   return Math.trunc(parsed)
 }
+
+const STAGE_INSET_X_PERCENT = 8
+const STAGE_INSET_Y_PERCENT = 10
+const STAGE_RANGE_X_PERCENT = 84
+const STAGE_RANGE_Y_PERCENT = 78
+
+interface LayoutBounds {
+  minX: number
+  maxX: number
+  minY: number
+  maxY: number
+}
+
+interface TableDragState {
+  tableId: string
+  pointerOffsetX: number
+  pointerOffsetY: number
+  nodeHalfWidth: number
+  nodeHalfHeight: number
+  bounds: LayoutBounds
+}
+
+const clamp = (value: number, min: number, max: number): number => Math.min(Math.max(value, min), max)
+
+const buildLayoutBounds = (tables: RestaurantTable[]): LayoutBounds => {
+  if (!tables.length) {
+    return {
+      minX: 0,
+      maxX: 1,
+      minY: 0,
+      maxY: 1,
+    }
+  }
+
+  const xValues = tables.map((table) => table.posX ?? 0)
+  const yValues = tables.map((table) => table.posY ?? 0)
+
+  return {
+    minX: Math.min(...xValues),
+    maxX: Math.max(...xValues),
+    minY: Math.min(...yValues),
+    maxY: Math.max(...yValues),
+  }
+}
+
+const normalizeTableLayout = (table: RestaurantTable): RestaurantTable => ({
+  ...table,
+  posX: table.posX ?? 0,
+  posY: table.posY ?? 0,
+})
+
+const normalizeTablesLayout = (tables: RestaurantTable[]): RestaurantTable[] => tables.map(normalizeTableLayout)
+
+const hydrateTablesLayout = (tables: RestaurantTable[]): RestaurantTable[] => {
+  const positionedTables = tables.filter((table) => table.posX !== null && table.posY !== null)
+  const hasPositionedTables = positionedTables.length > 0
+  const maxX = hasPositionedTables ? Math.max(...positionedTables.map((table) => table.posX ?? 0)) : 0
+  const maxY = hasPositionedTables ? Math.max(...positionedTables.map((table) => table.posY ?? 0)) : 0
+
+  let fallbackIndex = 0
+
+  return tables.map((table) => {
+    if (table.posX !== null && table.posY !== null) {
+      return normalizeTableLayout(table)
+    }
+
+    const offset = fallbackIndex
+    fallbackIndex += 1
+
+    return {
+      ...table,
+      posX: hasPositionedTables ? maxX + 1 + offset : offset,
+      posY: hasPositionedTables ? maxY + 1 + offset : offset,
+    }
+  })
+}
+
+const reconcileTablesWithPending = (
+  tables: RestaurantTable[],
+  pendingTables: RestaurantTable[],
+): { tables: RestaurantTable[]; unresolvedPending: RestaurantTable[] } => {
+  if (!pendingTables.length) {
+    return { tables, unresolvedPending: [] }
+  }
+
+  const pendingById = new Map(pendingTables.map((table) => [table.id, table]))
+  const reconciledTables = tables.map((table) => {
+    const pendingTable = pendingById.get(table.id)
+
+    if (!pendingTable) {
+      return table
+    }
+
+    pendingById.delete(table.id)
+
+    return {
+      ...table,
+      posX: table.posX ?? pendingTable.posX,
+      posY: table.posY ?? pendingTable.posY,
+      layoutLabel: table.layoutLabel ?? pendingTable.layoutLabel,
+    }
+  })
+
+  return {
+    tables: reconciledTables.concat(Array.from(pendingById.values())),
+    unresolvedPending: Array.from(pendingById.values()),
+  }
+}
+
+const toStagePercent = (value: number | null, min: number, max: number, inset: number, range: number): number => {
+  const safeValue = value ?? 0
+  const normalized = (safeValue - min) / Math.max(1, max - min)
+  return inset + clamp(normalized, 0, 1) * range
+}
+
+const fromStagePercent = (percent: number, min: number, max: number, inset: number, range: number): number => {
+  const normalized = clamp((percent - inset) / Math.max(1, range), 0, 1)
+  return min + normalized * Math.max(1, max - min)
+}
+
+const getTableAvailabilityStatus = (table: RestaurantTable): 'disponible' | 'ocupada' =>
+  table.availabilityStatus === 'ocupada' ? 'ocupada' : 'disponible'
 
 const getAdminUnlockErrorMessage = (error: unknown): string => {
   if (axios.isAxiosError(error)) {
@@ -175,7 +311,7 @@ export function AdministrationPage() {
   })
   const [editingUserId, setEditingUserId] = useState<string | null>(null)
   const [userEditForm, setUserEditForm] = useState<UserEditForm>(emptyUserEditForm)
-  const [tablesForm, setTablesForm] = useState<TablesDistributionForm>(emptyDistributionForm)
+  const [tablesForm, setTablesForm] = useState<TablesCreationForm>(emptyTablesForm)
   const [tablesState, setTablesState] = useState<ResultState<RestaurantTable[]>>({
     status: 'idle',
     message: '',
@@ -185,7 +321,15 @@ export function AdministrationPage() {
     status: 'idle',
     message: '',
   })
+  const [editingTableId, setEditingTableId] = useState<string | null>(null)
+  const [tableEditForm, setTableEditForm] = useState<TableEditForm>(emptyTableEditForm)
+  const [editableTables, setEditableTables] = useState<RestaurantTable[]>([])
+  const [tableCoordinateBounds, setTableCoordinateBounds] = useState<LayoutBounds>(buildLayoutBounds([]))
+  const [tableDragState, setTableDragState] = useState<TableDragState | null>(null)
+  const [layoutDirty, setLayoutDirty] = useState(false)
+  const [updatingTableId, setUpdatingTableId] = useState<string | null>(null)
   const [selectedTableId, setSelectedTableId] = useState('')
+  const pendingCreatedTablesRef = useRef<RestaurantTable[]>([])
   const [reportFilters, setReportFilters] = useState<ReportFilters>(initialReportFilters)
   const [dailySummaryState, setDailySummaryState] = useState<ResultState<DailyReportSummary | null>>({
     status: 'idle',
@@ -211,6 +355,7 @@ export function AdministrationPage() {
     status: 'idle',
     message: '',
   })
+  const tablesStageRef = useRef<HTMLDivElement | null>(null)
 
   const restaurantName = useMemo(
     () =>
@@ -222,22 +367,9 @@ export function AdministrationPage() {
   )
 
   const selectedTable = useMemo(
-    () => tablesState.data.find((table) => table.id === selectedTableId) ?? tablesState.data[0] ?? null,
-    [selectedTableId, tablesState.data],
+    () => editableTables.find((table) => table.id === selectedTableId) ?? editableTables[0] ?? null,
+    [editableTables, selectedTableId],
   )
-
-  const tableLayoutCoordinates = useMemo(() => {
-    const xValues = Array.from(new Set(tablesState.data.map((table) => table.posX ?? 0))).sort((a, b) => a - b)
-    const yValues = Array.from(new Set(tablesState.data.map((table) => table.posY ?? 0))).sort((a, b) => a - b)
-    const xIndex = new Map(xValues.map((value, index) => [value, index + 1]))
-    const yIndex = new Map(yValues.map((value, index) => [value, index + 1]))
-
-    return {
-      columns: Math.max(1, xValues.length),
-      xIndex,
-      yIndex,
-    }
-  }, [tablesState.data])
 
   const loadOverview = useCallback(async () => {
     setEstablishmentState({
@@ -290,6 +422,20 @@ export function AdministrationPage() {
     setUserEditForm(emptyUserEditForm)
   }, [])
 
+  const resetTableEditForm = useCallback(() => {
+    setEditingTableId(null)
+    setTableEditForm(emptyTableEditForm)
+  }, [])
+
+  const startEditingTable = useCallback((table: RestaurantTable) => {
+    setEditingTableId(table.id)
+    setTableEditForm({
+      capacity: String(table.capacity),
+      availabilityStatus: getTableAvailabilityStatus(table),
+    })
+    setSelectedTableId(table.id)
+  }, [])
+
   const startEditingUser = useCallback((user: AdminUser) => {
     setEditingUserId(user.id)
     setUserEditForm({
@@ -300,28 +446,115 @@ export function AdministrationPage() {
     })
   }, [])
 
-  const loadTables = useCallback(async () => {
-    setTablesState((state) => ({
-      ...state,
-      status: 'loading',
-      message: 'Cargando mesas...',
-    }))
+  const loadTables = useCallback(async (options?: { silent?: boolean }) => {
+    if (!options?.silent) {
+      setTablesState((state) => ({
+        ...state,
+        status: 'loading',
+        message: 'Cargando mesas...',
+      }))
+    }
 
     try {
-      const data = await listTables()
+      const backendTables = await listTables()
+      const reconciledTables = reconcileTablesWithPending(backendTables, pendingCreatedTablesRef.current)
+      pendingCreatedTablesRef.current = reconciledTables.unresolvedPending.filter((table) => table.isActive)
+      const data = hydrateTablesLayout(reconciledTables.tables.filter((table) => table.isActive))
       setTablesState({
         status: 'success',
         message: 'Distribución de mesas actualizada.',
         data,
       })
+      setEditableTables(data)
+      setTableCoordinateBounds(buildLayoutBounds(data))
+      setLayoutDirty(false)
     } catch (error) {
-      setTablesState({
-        status: 'error',
-        message: getApiErrorMessage(error),
-        data: [],
-      })
+      if (options?.silent) {
+        setTablesState((state) => ({
+          ...state,
+          status: 'error',
+          message: getApiErrorMessage(error),
+        }))
+      } else {
+        setTablesState({
+          status: 'error',
+          message: getApiErrorMessage(error),
+          data: [],
+        })
+        setEditableTables([])
+        setLayoutDirty(false)
+      }
     }
   }, [])
+
+  useEffect(() => {
+    if (!tableDragState) {
+      return
+    }
+
+    const handlePointerMove = (event: PointerEvent) => {
+      const stageElement = tablesStageRef.current
+      if (!stageElement) {
+        return
+      }
+
+      const stageRect = stageElement.getBoundingClientRect()
+      const centerX = event.clientX - stageRect.left - tableDragState.pointerOffsetX
+      const centerY = event.clientY - stageRect.top - tableDragState.pointerOffsetY
+
+      const clampedCenterX = clamp(centerX, tableDragState.nodeHalfWidth, stageRect.width - tableDragState.nodeHalfWidth)
+      const clampedCenterY = clamp(centerY, tableDragState.nodeHalfHeight, stageRect.height - tableDragState.nodeHalfHeight)
+
+      const leftPercent = (clampedCenterX / stageRect.width) * 100
+      const topPercent = (clampedCenterY / stageRect.height) * 100
+
+      const nextPosX = Math.round(
+        fromStagePercent(
+          leftPercent,
+          tableDragState.bounds.minX,
+          tableDragState.bounds.maxX,
+          STAGE_INSET_X_PERCENT,
+          STAGE_RANGE_X_PERCENT,
+        ),
+      )
+      const nextPosY = Math.round(
+        fromStagePercent(
+          topPercent,
+          tableDragState.bounds.minY,
+          tableDragState.bounds.maxY,
+          STAGE_INSET_Y_PERCENT,
+          STAGE_RANGE_Y_PERCENT,
+        ),
+      )
+
+      setEditableTables((previousTables) =>
+        previousTables.map((table) =>
+          table.id === tableDragState.tableId
+            ? {
+                ...table,
+                posX: nextPosX,
+                posY: nextPosY,
+              }
+            : table,
+        ),
+      )
+      setLayoutDirty(true)
+    }
+
+    const handlePointerUp = () => {
+      setTableDragState(null)
+    }
+
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp)
+    window.addEventListener('pointercancel', handlePointerUp)
+
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+      window.removeEventListener('pointercancel', handlePointerUp)
+    }
+  }, [tableDragState])
 
   const loadDailySummary = useCallback(async (filters: ReportFilters) => {
     setDailySummaryState({
@@ -550,35 +783,219 @@ export function AdministrationPage() {
     }
   }
 
-  const buildDistributionItems = (form: TablesDistributionForm): TableDistributionItem[] => {
-    const quantity = parsePositiveInteger(form.quantity, 1)
-    const capacity = parsePositiveInteger(form.capacity, 2)
-    const startNumber = parsePositiveInteger(form.startNumber, 1)
-    const columns = parsePositiveInteger(form.columns, 4)
-    const spacingX = parsePositiveInteger(form.spacingX, 120)
-    const spacingY = parsePositiveInteger(form.spacingY, 120)
-    const layoutLabel = form.layoutLabel.trim()
+  const handleCreateTable = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setTablesActionState({ status: 'loading', message: 'Creando mesa...' })
 
-    return Array.from({ length: quantity }, (_, index) => ({
-      tableNumber: startNumber + index,
-      capacity,
-      posX: (index % columns) * spacingX,
-      posY: Math.floor(index / columns) * spacingY,
-      ...(layoutLabel ? { layoutLabel } : {}),
-    }))
+    try {
+      const payload = {
+        quantity: 1,
+        capacity: parsePositiveInteger(tablesForm.capacity, 2),
+      }
+
+      const createdTables = await createTablesBulk(payload)
+      pendingCreatedTablesRef.current = [...pendingCreatedTablesRef.current, ...createdTables]
+      const optimisticTables = hydrateTablesLayout(
+        reconcileTablesWithPending([...tablesState.data, ...createdTables], pendingCreatedTablesRef.current).tables,
+      )
+
+      setTablesState((state) => ({
+        ...state,
+        status: 'success',
+        message: 'Mesa creada correctamente.',
+        data: optimisticTables,
+      }))
+      setEditableTables(optimisticTables)
+      setTableCoordinateBounds(buildLayoutBounds(optimisticTables))
+      setLayoutDirty(false)
+      setSelectedTableId(createdTables[0]?.id ?? '')
+      setTablesActionState({
+        status: 'success',
+        message: `Mesa ${tablesForm.category.toLowerCase()} creada correctamente.`,
+      })
+      await Promise.all([loadTables(), loadOverview()])
+    } catch (error) {
+      setTablesActionState({
+        status: 'error',
+        message: getApiErrorMessage(error),
+      })
+    }
   }
 
-  const handleCreateDistribution = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    setTablesActionState({ status: 'loading', message: 'Guardando distribución de mesas...' })
+  const handleTablePointerDown = (event: ReactPointerEvent<HTMLButtonElement>, tableId: string) => {
+    const stageElement = tablesStageRef.current
+    if (!stageElement) {
+      return
+    }
+
+    const table = editableTables.find((item) => item.id === tableId)
+    if (!table) {
+      return
+    }
+
+    const stageRect = stageElement.getBoundingClientRect()
+    const tableLeftPercent = toStagePercent(
+      table.posX,
+      tableCoordinateBounds.minX,
+      tableCoordinateBounds.maxX,
+      STAGE_INSET_X_PERCENT,
+      STAGE_RANGE_X_PERCENT,
+    )
+    const tableTopPercent = toStagePercent(
+      table.posY,
+      tableCoordinateBounds.minY,
+      tableCoordinateBounds.maxY,
+      STAGE_INSET_Y_PERCENT,
+      STAGE_RANGE_Y_PERCENT,
+    )
+
+    const centerX = (tableLeftPercent / 100) * stageRect.width
+    const centerY = (tableTopPercent / 100) * stageRect.height
+    const nodeRect = event.currentTarget.getBoundingClientRect()
+
+    setSelectedTableId(tableId)
+    setTableDragState({
+      tableId,
+      pointerOffsetX: event.clientX - stageRect.left - centerX,
+      pointerOffsetY: event.clientY - stageRect.top - centerY,
+      nodeHalfWidth: nodeRect.width / 2,
+      nodeHalfHeight: nodeRect.height / 2,
+      bounds: tableCoordinateBounds,
+    })
+  }
+
+  const handleSaveLayout = async () => {
+    if (!editableTables.length) {
+      return
+    }
+
+    setTablesActionState({ status: 'loading', message: 'Guardando nueva posición de mesas...' })
 
     try {
       const payload: CreateTablesDistributionRequest = {
-        tables: buildDistributionItems(tablesForm),
+        tables: normalizeTablesLayout(editableTables).map((table) => ({
+          tableNumber: table.tableNumber,
+          capacity: table.capacity,
+          posX: table.posX,
+          posY: table.posY,
+          ...(table.layoutLabel ? { layoutLabel: table.layoutLabel } : {}),
+        })),
       }
-      await createTablesDistribution(payload)
-      setTablesActionState({ status: 'success', message: 'Distribución de mesas guardada.' })
-      await Promise.all([loadTables(), loadOverview()])
+
+      const savedTables = normalizeTablesLayout(await createTablesDistribution(payload))
+      setTablesState((state) => ({
+        ...state,
+        data: savedTables,
+      }))
+      setEditableTables(savedTables)
+      setTableCoordinateBounds(buildLayoutBounds(savedTables))
+      setLayoutDirty(false)
+      setTablesActionState({ status: 'success', message: 'Posiciones de la maqueta guardadas.' })
+    } catch (error) {
+      setTablesActionState({
+        status: 'error',
+        message: getApiErrorMessage(error),
+      })
+    }
+  }
+
+  const handleUpdateTable = async (event: FormEvent<HTMLFormElement>, tableId: string) => {
+    event.preventDefault()
+    setTablesActionState({ status: 'loading', message: 'Guardando cambios de la mesa...' })
+
+    try {
+      const payload: UpdateTableRequest = {
+        capacity: parsePositiveInteger(tableEditForm.capacity, 1),
+        availabilityStatus: tableEditForm.availabilityStatus,
+      }
+
+      const updatedTable = normalizeTableLayout(await updateTable(tableId, payload))
+      setEditableTables((previousTables) =>
+        previousTables.map((item) => (item.id === tableId ? updatedTable : item)),
+      )
+      setTablesState((state) => ({
+        ...state,
+        data: state.data.map((item) => (item.id === tableId ? updatedTable : item)),
+      }))
+      await loadTables({ silent: true })
+      resetTableEditForm()
+      setTablesActionState({ status: 'success', message: 'Mesa actualizada correctamente.' })
+    } catch (error) {
+      setTablesActionState({
+        status: 'error',
+        message: getApiErrorMessage(error),
+      })
+    }
+  }
+
+  const handleToggleTableAvailability = async (table: RestaurantTable) => {
+    const nextAvailability =
+      getTableAvailabilityStatus(table) === 'disponible' ? 'ocupada' : 'disponible'
+
+    setUpdatingTableId(table.id)
+    setTablesActionState({
+      status: 'loading',
+      message: `Actualizando la disponibilidad de ${formatTableIdentifier(table.tableNumber)}...`,
+    })
+
+    try {
+      const updatedTable = await updateTableAvailability(table.id, nextAvailability)
+      const normalizedTable = normalizeTableLayout(updatedTable)
+      setEditableTables((previousTables) =>
+        previousTables.map((item) => (item.id === table.id ? normalizedTable : item)),
+      )
+      setTablesState((state) => ({
+        ...state,
+        data: state.data.map((item) => (item.id === table.id ? normalizedTable : item)),
+      }))
+      if (editingTableId === table.id) {
+        setTableEditForm((previousForm) => ({
+          ...previousForm,
+          availabilityStatus: nextAvailability,
+        }))
+      }
+      await loadTables({ silent: true })
+      setTablesActionState({
+        status: 'success',
+        message: `La mesa ${formatTableIdentifier(table.tableNumber)} ahora está ${formatTableAvailabilityStatus(nextAvailability)}.`,
+      })
+    } catch (error) {
+      setTablesActionState({
+        status: 'error',
+        message: getApiErrorMessage(error),
+      })
+    } finally {
+      setUpdatingTableId(null)
+    }
+  }
+
+  const handleDeleteTable = async (table: RestaurantTable) => {
+    if (!window.confirm(`Eliminar la mesa ${formatTableIdentifier(table.tableNumber)}?`)) {
+      return
+    }
+
+    setTablesActionState({ status: 'loading', message: 'Eliminando mesa...' })
+
+    try {
+      await deleteTable(table.id)
+      pendingCreatedTablesRef.current = pendingCreatedTablesRef.current.filter((item) => item.id !== table.id)
+      setEditableTables((previousTables) => previousTables.filter((item) => item.id !== table.id))
+      setTablesState((state) => ({
+        ...state,
+        data: state.data.filter((item) => item.id !== table.id),
+      }))
+      if (editingTableId === table.id) {
+        resetTableEditForm()
+      }
+      if (selectedTableId === table.id) {
+        setSelectedTableId('')
+      }
+      await loadTables({ silent: true })
+      setTablesActionState({
+        status: 'success',
+        message: `La mesa ${formatTableIdentifier(table.tableNumber)} fue eliminada.`,
+      })
+      await loadOverview()
     } catch (error) {
       setTablesActionState({
         status: 'error',
@@ -951,187 +1368,290 @@ export function AdministrationPage() {
 
       {activeTab === 'mesas' ? (
         <div className="stacked-panels">
-          <article className="panel form-panel">
+          <article className="panel form-panel tables-visual-panel">
             <div className="panel-heading">
               <div>
                 <p className="eyebrow">Mesas</p>
-                <h3>Crear distribución</h3>
+                <h3>Maqueta visual del salón</h3>
               </div>
-              <button type="button" className="button button-secondary" onClick={loadTables}>
-                Actualizar
-              </button>
+              <div className="button-row tables-stage-actions">
+                <button
+                  type="button"
+                  className="button button-primary"
+                  onClick={handleSaveLayout}
+                  disabled={!layoutDirty || !editableTables.length || tablesActionState.status === 'loading'}
+                >
+                  Guardar posiciones
+                </button>
+              </div>
             </div>
 
-            <form className="form-panel" onSubmit={handleCreateDistribution}>
-              <div className="form-grid">
-                <label>
-                  Cantidad de mesas
-                  <input
-                    type="number"
-                    min={1}
-                    value={tablesForm.quantity}
-                    onChange={(event) => setTablesForm({ ...tablesForm, quantity: event.target.value })}
-                    required
-                  />
-                </label>
+            <StatusMessage status={tablesState.status} message={tablesState.message} />
+            <StatusMessage status={tablesActionState.status} message={tablesActionState.message} />
 
-                <label>
-                  Capacidad por mesa
-                  <input
-                    type="number"
-                    min={1}
-                    value={tablesForm.capacity}
-                    onChange={(event) => setTablesForm({ ...tablesForm, capacity: event.target.value })}
-                    required
-                  />
-                </label>
+            <div className="tables-stage-meta">
+              <p className="muted">Arrastrá mesas dentro del plano para reubicar su posición.</p>
+              <p className="subtle">La disponibilidad se cambia desde cada mesa y se refleja en el color.</p>
+            </div>
+
+            <div className="tables-status-legend" aria-label="Leyenda de estado de mesas">
+              <span className="tables-legend-item">
+                <span className="tables-legend-dot tables-legend-dot-disponible" aria-hidden="true" />
+                Disponible
+              </span>
+              <span className="tables-legend-item">
+                <span className="tables-legend-dot tables-legend-dot-ocupada" aria-hidden="true" />
+                Ocupada
+              </span>
+              <span className="tables-legend-item">
+                <span className="tables-legend-dot tables-legend-dot-seleccionada" aria-hidden="true" />
+                Seleccionada
+              </span>
+            </div>
+
+            {editableTables.length ? (
+              <div
+                ref={tablesStageRef}
+                className="tables-stage tables-stage-large"
+                role="img"
+                aria-label="Maqueta de distribución de mesas"
+              >
+                {editableTables.map((table) => {
+                  const left = toStagePercent(
+                    table.posX,
+                    tableCoordinateBounds.minX,
+                    tableCoordinateBounds.maxX,
+                    STAGE_INSET_X_PERCENT,
+                    STAGE_RANGE_X_PERCENT,
+                  )
+                  const top = toStagePercent(
+                    table.posY,
+                    tableCoordinateBounds.minY,
+                    tableCoordinateBounds.maxY,
+                    STAGE_INSET_Y_PERCENT,
+                    STAGE_RANGE_Y_PERCENT,
+                  )
+                  const availability = getTableAvailabilityStatus(table)
+                  const tableIdentifier = formatTableIdentifier(table.tableNumber)
+                  const isSelected = (selectedTableId || editableTables[0]?.id) === table.id
+
+                  return (
+                    <button
+                      key={table.id}
+                      type="button"
+                      className={[
+                        'table-node',
+                        availability === 'ocupada' ? 'table-node-ocupada' : 'table-node-disponible',
+                        isSelected ? 'table-node-active' : '',
+                        tableDragState?.tableId === table.id ? 'table-node-dragging' : '',
+                      ].join(' ').trim()}
+                      style={{ left: `${left}%`, top: `${top}%` }}
+                      onClick={() => setSelectedTableId(table.id)}
+                      onPointerDown={(event) => handleTablePointerDown(event, table.id)}
+                      aria-label={`${tableIdentifier}, ${table.capacity} plazas, ${formatTableAvailabilityStatus(availability)}`}
+                    >
+                      <span>{tableIdentifier}</span>
+                    </button>
+                  )
+                })}
               </div>
+            ) : (
+              <div className="empty-state">Todavía no hay mesas para mostrar.</div>
+            )}
 
-              <div className="form-grid">
-                <label>
-                  Número inicial de mesa
-                  <input
-                    type="number"
-                    min={1}
-                    value={tablesForm.startNumber}
-                    onChange={(event) => setTablesForm({ ...tablesForm, startNumber: event.target.value })}
-                    required
-                  />
-                </label>
-
-                <label>
-                  Etiqueta de sector
-                  <input
-                    value={tablesForm.layoutLabel}
-                    onChange={(event) => setTablesForm({ ...tablesForm, layoutLabel: event.target.value })}
-                  />
-                </label>
+            {selectedTable ? (
+              <div className="selected-table-card">
+                <p className="eyebrow">{formatTableIdentifier(selectedTable.tableNumber)}</p>
+                <h3>{selectedTable.capacity} plazas</h3>
+                <p className="muted">
+                  Estado: {formatTableAvailabilityStatus(getTableAvailabilityStatus(selectedTable))}
+                </p>
               </div>
-
-              <div className="form-grid">
-                <label>
-                  Columnas del mapa
-                  <input
-                    type="number"
-                    min={1}
-                    value={tablesForm.columns}
-                    onChange={(event) => setTablesForm({ ...tablesForm, columns: event.target.value })}
-                    required
-                  />
-                </label>
-
-                <label>
-                  Separación X (px)
-                  <input
-                    type="number"
-                    min={1}
-                    value={tablesForm.spacingX}
-                    onChange={(event) => setTablesForm({ ...tablesForm, spacingX: event.target.value })}
-                    required
-                  />
-                </label>
-              </div>
-
-              <label>
-                Separación Y (px)
-                <input
-                  type="number"
-                  min={1}
-                  value={tablesForm.spacingY}
-                  onChange={(event) => setTablesForm({ ...tablesForm, spacingY: event.target.value })}
-                  required
-                />
-              </label>
-
-              <button type="submit" className="button button-primary">
-                Guardar distribución
-              </button>
-              <StatusMessage status={tablesActionState.status} message={tablesActionState.message} />
-            </form>
+            ) : null}
           </article>
 
-          <div className="two-column-grid">
+          <div className="two-column-grid tables-layout-grid">
             <article className="panel form-panel">
               <div className="panel-heading">
                 <div>
                   <p className="eyebrow">Mesas</p>
-                  <h3>Mapa visual</h3>
+                  <h3>Alta de mesa</h3>
                 </div>
               </div>
 
-              <StatusMessage status={tablesState.status} message={tablesState.message} />
+              <form className="form-panel" onSubmit={handleCreateTable}>
+                <div className="form-grid">
+                  <label>
+                    Capacidad
+                    <input
+                      type="number"
+                      min={1}
+                      value={tablesForm.capacity}
+                      onChange={(event) => setTablesForm({ ...tablesForm, capacity: event.target.value })}
+                      required
+                    />
+                  </label>
 
-              <div
-                className="table-map"
-                style={{
-                  gridTemplateColumns: `repeat(${tableLayoutCoordinates.columns}, minmax(130px, 1fr))`,
-                }}
-              >
-                {tablesState.data.length ? (
-                  tablesState.data.map((table) => (
-                    <button
-                      key={table.id}
-                      type="button"
-                      className={(selectedTableId || tablesState.data[0]?.id) === table.id ? 'table-card table-card-active' : 'table-card'}
-                      style={{
-                        gridColumn: tableLayoutCoordinates.xIndex.get(table.posX ?? 0) ?? 1,
-                        gridRow: tableLayoutCoordinates.yIndex.get(table.posY ?? 0) ?? 1,
-                      }}
-                      onClick={() => setSelectedTableId(table.id)}
+                  <label>
+                    Categoría de mesa
+                    <select
+                      value={tablesForm.category}
+                      onChange={(event) =>
+                        setTablesForm({ ...tablesForm, category: event.target.value as TableCategory })
+                      }
                     >
-                      <p className="eyebrow">Mesa {table.tableNumber}</p>
-                      <h3>{table.capacity} plazas</h3>
-                      <p className="muted">ID: {table.id.slice(0, 8)}</p>
-                      <p className="muted">{table.layoutLabel ?? 'Sin sector'}</p>
-                    </button>
-                  ))
-                ) : (
-                  <div className="empty-state">Todavía no hay mesas para mostrar.</div>
-                )}
-              </div>
+                      {tableCategories.map((category) => (
+                        <option key={category.value} value={category.value}>
+                          {category.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+
+                <button type="submit" className="button button-primary">
+                  Crear mesa
+                </button>
+              </form>
             </article>
 
             <article className="panel form-panel">
               <div className="panel-heading">
                 <div>
                   <p className="eyebrow">Mesas</p>
-                  <h3>Detalle</h3>
+                  <h3>Listado de mesas</h3>
                 </div>
               </div>
 
-              {selectedTable ? (
-                <div className="selected-table-card">
-                  <p className="eyebrow">Mesa {selectedTable.tableNumber}</p>
-                  <h3>{selectedTable.capacity} plazas</h3>
-                  <p className="muted">ID: {selectedTable.id}</p>
-                  <p className="muted">Posición: ({selectedTable.posX ?? 0}, {selectedTable.posY ?? 0})</p>
-                  <p className="muted">Sector: {selectedTable.layoutLabel ?? 'Sin sector'}</p>
-                  <p className="muted">Estado: {selectedTable.isActive ? 'Activa' : 'Inactiva'}</p>
-                </div>
-              ) : (
-                <div className="empty-state">Seleccioná una mesa para ver su detalle.</div>
-              )}
-
-              <div className="table-scroll">
+              <div className="table-scroll tables-table-scroll">
                 <table>
                   <thead>
                     <tr>
-                      <th>ID</th>
-                      <th>Número</th>
+                      <th>Mesa</th>
                       <th>Capacidad</th>
-                      <th>Posición</th>
+                      <th>Disponibilidad</th>
+                      <th>Acciones</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {tablesState.data.length ? (
-                      tablesState.data.map((table) => (
-                        <tr key={table.id}>
-                          <td className="subtle">{table.id}</td>
-                          <td>{table.tableNumber}</td>
-                          <td>{table.capacity}</td>
-                          <td>{table.posX ?? 0}, {table.posY ?? 0}</td>
-                        </tr>
-                      ))
+                    {editableTables.length ? (
+                      editableTables.map((table) => {
+                        const availability = getTableAvailabilityStatus(table)
+                        const tableIdentifier = formatTableIdentifier(table.tableNumber)
+                        const isEditingTable = editingTableId === table.id
+
+                        return (
+                          <Fragment key={table.id}>
+                            <tr>
+                              <td>
+                                <strong>{tableIdentifier}</strong>
+                              </td>
+                              <td>{table.capacity}</td>
+                              <td>{formatTableAvailabilityStatus(availability)}</td>
+                              <td>
+                                <div className="table-actions">
+                                  <button
+                                    type="button"
+                                    className={[
+                                      'button button-secondary button-icon button-icon-availability',
+                                      availability === 'ocupada'
+                                        ? 'button-icon-availability-ocupada'
+                                        : 'button-icon-availability-disponible',
+                                    ].join(' ')}
+                                    onClick={() => void handleToggleTableAvailability(table)}
+                                    disabled={updatingTableId === table.id || tablesActionState.status === 'loading'}
+                                    aria-pressed={availability === 'ocupada'}
+                                    aria-label={`Cambiar disponibilidad de ${tableIdentifier} a ${
+                                      availability === 'disponible' ? 'ocupada' : 'disponible'
+                                    }`}
+                                  >
+                                    <img
+                                      className="button-icon-image"
+                                      src={availabilityIcon}
+                                      alt=""
+                                      aria-hidden="true"
+                                    />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="button button-secondary button-icon button-icon-edit"
+                                    onClick={() => startEditingTable(table)}
+                                    aria-label="Editar mesa"
+                                  >
+                                    <img className="button-icon-image" src={editIcon} alt="" aria-hidden="true" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="button button-ghost button-icon button-icon-delete"
+                                    onClick={() => void handleDeleteTable(table)}
+                                    disabled={tablesActionState.status === 'loading'}
+                                    aria-label="Eliminar mesa"
+                                  >
+                                    <img className="button-icon-image" src={deleteIcon} alt="" aria-hidden="true" />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                            {isEditingTable ? (
+                              <tr className="table-edit-row">
+                                <td colSpan={4}>
+                                  <form
+                                    className="form-panel table-edit-form"
+                                    onSubmit={(event) => void handleUpdateTable(event, table.id)}
+                                  >
+                                    <div className="form-grid">
+                                      <label>
+                                        Capacidad
+                                        <input
+                                          type="number"
+                                          min={1}
+                                          value={tableEditForm.capacity}
+                                          onChange={(event) =>
+                                            setTableEditForm({
+                                              ...tableEditForm,
+                                              capacity: event.target.value,
+                                            })
+                                          }
+                                          required
+                                        />
+                                      </label>
+
+                                      <label>
+                                        Disponibilidad
+                                        <select
+                                          value={tableEditForm.availabilityStatus}
+                                          onChange={(event) =>
+                                            setTableEditForm({
+                                              ...tableEditForm,
+                                              availabilityStatus: event.target.value as TableAvailabilityStatus,
+                                            })
+                                          }
+                                        >
+                                          <option value="disponible">Disponible</option>
+                                          <option value="ocupada">Ocupada</option>
+                                        </select>
+                                      </label>
+                                    </div>
+
+                                    <div className="button-row">
+                                      <button type="submit" className="button button-primary button-tight">
+                                        Guardar cambios
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="button button-ghost button-tight"
+                                        onClick={resetTableEditForm}
+                                      >
+                                        Cancelar
+                                      </button>
+                                    </div>
+                                  </form>
+                                </td>
+                              </tr>
+                            ) : null}
+                          </Fragment>
+                        )
+                      })
                     ) : (
                       <tr>
                         <td colSpan={4}>Sin mesas para mostrar.</td>
