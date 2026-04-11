@@ -15,6 +15,14 @@ describe('CustomersService', () => {
   };
   let reservationRepository: {
     find: jest.Mock;
+    createQueryBuilder: jest.Mock;
+  };
+  let reservationQueryBuilder: {
+    select: jest.Mock;
+    addSelect: jest.Mock;
+    where: jest.Mock;
+    groupBy: jest.Mock;
+    getRawMany: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -28,8 +36,17 @@ describe('CustomersService', () => {
       findOne: jest.fn(),
     };
 
+    reservationQueryBuilder = {
+      select: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      groupBy: jest.fn().mockReturnThis(),
+      getRawMany: jest.fn(),
+    };
+
     reservationRepository = {
       find: jest.fn(),
+      createQueryBuilder: jest.fn().mockReturnValue(reservationQueryBuilder),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -87,5 +104,49 @@ describe('CustomersService', () => {
     await expect(service.getVisitHistory('missing')).rejects.toBeInstanceOf(
       NotFoundException,
     );
+  });
+
+  it('returns customer list with reservation metrics', async () => {
+    customerRepository.find.mockResolvedValue([
+      {
+        id: 'customer-1',
+        fullName: 'Ana Ruiz',
+      },
+      {
+        id: 'customer-2',
+        fullName: 'Luis Perez',
+      },
+    ]);
+    reservationQueryBuilder.getRawMany.mockResolvedValue([
+      {
+        customerId: 'customer-1',
+        reservationsCount: '8',
+        attendedCount: '5',
+        cancelledCount: '2',
+        noShowCount: '1',
+      },
+    ]);
+
+    const rows = await service.listWithMetrics({});
+
+    expect(reservationRepository.createQueryBuilder).toHaveBeenCalledWith(
+      'reservation',
+    );
+    expect(rows).toEqual([
+      expect.objectContaining({
+        id: 'customer-1',
+        reservationsCount: 8,
+        attendedCount: 5,
+        cancelledCount: 2,
+        noShowCount: 1,
+      }),
+      expect.objectContaining({
+        id: 'customer-2',
+        reservationsCount: 0,
+        attendedCount: 0,
+        cancelledCount: 0,
+        noShowCount: 0,
+      }),
+    ]);
   });
 });

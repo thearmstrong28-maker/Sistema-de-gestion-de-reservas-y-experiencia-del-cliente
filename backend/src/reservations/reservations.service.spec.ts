@@ -66,7 +66,8 @@ describe('ReservationsService', () => {
       findOne: jest.fn().mockResolvedValue({
         id: 'shift-1',
         shiftDate: '2026-03-26',
-        startsAt: '18:00:00',
+        shiftName: '2026-03-26:vespertino',
+        startsAt: '14:00:00',
         endsAt: '22:00:00',
         isActive: true,
       }),
@@ -131,7 +132,7 @@ describe('ReservationsService', () => {
   });
 
   it('rejects reservations outside the configured window', async () => {
-    const startAt = new Date('2026-05-01T19:00:00.000Z');
+    const startAt = new Date(2026, 4, 1, 23, 30, 0);
 
     await expect(
       service.create(
@@ -150,8 +151,9 @@ describe('ReservationsService', () => {
     shiftRepository.findOne.mockResolvedValueOnce({
       id: 'shift-1',
       shiftDate: '2026-03-26',
-      startsAt: '08:00:00',
-      endsAt: '15:00:00',
+      shiftName: '2026-03-26:matutino',
+      startsAt: '06:00:00',
+      endsAt: '14:00:00',
       isActive: true,
     });
     tableRepository.find.mockResolvedValue([
@@ -174,7 +176,7 @@ describe('ReservationsService', () => {
         customerId: 'customer-1',
         shiftId: 'shift-1',
         partySize: 2,
-        startsAt: new Date('2026-03-26T11:00:00.000Z'),
+        startsAt: new Date(2026, 2, 26, 11, 0, 0),
       },
       'user-admin-001',
     );
@@ -183,7 +185,7 @@ describe('ReservationsService', () => {
     expect(reservationRepository.create).toHaveBeenCalledWith(
       expect.objectContaining({
         shiftId: 'shift-1',
-        startsAt: new Date('2026-03-26T11:00:00.000Z'),
+        startsAt: new Date(2026, 2, 26, 11, 0, 0),
       }),
     );
   });
@@ -207,7 +209,7 @@ describe('ReservationsService', () => {
         customerId: 'customer-1',
         shiftId: 'shift-1',
         partySize: 2,
-        startsAt: new Date('2026-03-26T19:00:00.000Z'),
+        startsAt: new Date(2026, 2, 26, 19, 0, 0),
       },
       'user-admin-001',
     );
@@ -220,6 +222,123 @@ describe('ReservationsService', () => {
         requestedDate: '2026-03-26',
         partySize: 2,
       }),
+    );
+  });
+
+  it('creates a matutino reservation at 08:00 with the morning shift', async () => {
+    shiftRepository.findOne.mockResolvedValueOnce({
+      id: 'shift-matutino-1',
+      shiftDate: '2026-04-11',
+      shiftName: '2026-04-11:matutino',
+      startsAt: '06:00:00',
+      endsAt: '14:00:00',
+      isActive: true,
+    });
+    tableRepository.find.mockResolvedValue([
+      {
+        id: 'table-matutino-1',
+        tableNumber: 1,
+        capacity: 4,
+        isActive: true,
+      },
+    ]);
+    reservationRepository.save.mockImplementation((value: ReservationEntity) =>
+      Promise.resolve({
+        id: 'reservation-matutino-1',
+        ...value,
+      }),
+    );
+    waitlistRepository.save.mockResolvedValue({
+      id: 'waitlist-matutino-1',
+      customerId: 'customer-1',
+      requestedShiftId: 'shift-matutino-1',
+      requestedDate: '2026-04-11',
+      partySize: 2,
+      notes: null,
+      position: 1,
+    });
+
+    const reservation = await service.create(
+      {
+        customerId: 'customer-1',
+        shiftId: 'shift-matutino-1',
+        partySize: 2,
+        startsAt: new Date(2026, 3, 11, 8, 0, 0),
+      },
+      'user-admin-001',
+    );
+
+    expect(reservation.id).toBe('reservation-matutino-1');
+    expect(reservation.shiftId).toBe('shift-matutino-1');
+    expect(reservation.reservationDate).toBe('2026-04-11');
+    expect(reservationRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        shiftId: 'shift-matutino-1',
+        startsAt: new Date(2026, 3, 11, 8, 0, 0),
+      }),
+    );
+    expect(waitlistRepository.delete).toHaveBeenCalledWith(
+      'waitlist-matutino-1',
+    );
+  });
+
+  it('creates a future vespertino reservation at 20:00 without availability conflict', async () => {
+    shiftRepository.findOne.mockResolvedValueOnce({
+      id: 'shift-vespertino-1',
+      shiftDate: '2026-04-11',
+      shiftName: '2026-04-11:vespertino',
+      startsAt: '14:00:00',
+      endsAt: '22:00:00',
+      isActive: true,
+    });
+    tableRepository.find.mockResolvedValue([
+      {
+        id: 'table-4',
+        tableNumber: 4,
+        capacity: 4,
+        isActive: true,
+      },
+    ]);
+    reservationRepository.save.mockImplementation((value: ReservationEntity) =>
+      Promise.resolve({
+        id: 'reservation-vespertino-1',
+        ...value,
+      }),
+    );
+    waitlistRepository.save.mockResolvedValue({
+      id: 'waitlist-vespertino-1',
+      customerId: 'customer-1',
+      requestedShiftId: 'shift-vespertino-1',
+      requestedDate: '2026-04-11',
+      partySize: 4,
+      notes: null,
+      position: 1,
+    });
+
+    const reservation = await service.create(
+      {
+        customerId: 'customer-1',
+        shiftId: 'shift-vespertino-1',
+        partySize: 4,
+        startsAt: new Date(2026, 3, 11, 20, 0, 0),
+      },
+      'user-admin-001',
+    );
+
+    expect(reservation.id).toBe('reservation-vespertino-1');
+    expect(reservation.shiftId).toBe('shift-vespertino-1');
+    expect(reservation.tableId).toBe('table-4');
+    expect(reservation.reservationDate).toBe('2026-04-11');
+    expect(reservationRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        shiftId: 'shift-vespertino-1',
+        tableId: 'table-4',
+        partySize: 4,
+        startsAt: new Date(2026, 3, 11, 20, 0, 0),
+      }),
+    );
+    expect(waitlistRepository.delete).toHaveBeenCalledWith(
+      'waitlist-vespertino-1',
     );
   });
 
@@ -263,7 +382,7 @@ describe('ReservationsService', () => {
         customerId: 'customer-1',
         shiftId: 'shift-1',
         partySize: 3,
-        startsAt: new Date('2026-03-26T19:30:00.000Z'),
+        startsAt: new Date(2026, 2, 26, 19, 30, 0),
       },
       'user-admin-001',
     );
@@ -316,7 +435,7 @@ describe('ReservationsService', () => {
         customerId: 'customer-1',
         shiftId: 'shift-1',
         partySize: 3,
-        startsAt: new Date('2026-03-26T19:30:00.000Z'),
+        startsAt: new Date(2026, 2, 26, 19, 30, 0),
       },
       'user-admin-001',
     );
@@ -336,8 +455,8 @@ describe('ReservationsService', () => {
         customerId: 'customer-1',
         shiftId: 'shift-1',
         reservationDate: '2026-03-26',
-        startsAt: new Date('2026-03-26T19:00:00.000Z'),
-        endsAt: new Date('2026-03-26T20:30:00.000Z'),
+        startsAt: new Date(2026, 2, 26, 19, 0, 0),
+        endsAt: new Date(2026, 2, 26, 20, 30, 0),
         partySize: 2,
         tableId: null,
         status: ReservationStatus.Confirmed,
@@ -360,7 +479,7 @@ describe('ReservationsService', () => {
 
     const updated = await service.update('reservation-1', {
       partySize: 3,
-      startsAt: new Date('2026-03-26T19:15:00.000Z'),
+      startsAt: new Date(2026, 2, 26, 19, 15, 0),
       notes: 'updated note',
     });
 
@@ -450,8 +569,8 @@ describe('ReservationsService', () => {
       shiftId: 'shift-1',
       partySize: 4,
       tableId: null,
-      startsAt: new Date('2026-03-26T19:00:00.000Z'),
-      endsAt: new Date('2026-03-26T20:30:00.000Z'),
+      startsAt: new Date(2026, 2, 26, 19, 0, 0),
+      endsAt: new Date(2026, 2, 26, 20, 30, 0),
       status: ReservationStatus.Pending,
     });
     tableRepository.findOne.mockResolvedValue({

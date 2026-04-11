@@ -7,6 +7,13 @@ import { ListCustomersQueryDto } from './dto/list-customers.query.dto';
 import { UpdateCustomerDto } from './dto/update-customer.dto';
 import { CustomerEntity } from './entities/customer.entity';
 
+export interface CustomerWithMetrics extends CustomerEntity {
+  reservationsCount: number;
+  attendedCount: number;
+  cancelledCount: number;
+  noShowCount: number;
+}
+
 @Injectable()
 export class CustomersService {
   constructor(
@@ -71,6 +78,57 @@ export class CustomersService {
     customer.notes = updateCustomerDto.notes ?? customer.notes;
 
     return this.customerRepository.save(customer);
+  }
+
+  async listWithMetrics(
+    query: ListCustomersQueryDto,
+  ): Promise<CustomerWithMetrics[]> {
+    const customers = await this.list(query);
+    if (!customers.length) {
+      return [];
+    }
+
+    const customerIds = customers.map((customer) => customer.id);
+    const metricsRows: Array<{
+      customerId: string;
+      reservationsCount: string;
+      attendedCount: string;
+      cancelledCount: string;
+      noShowCount: string;
+    }> = await this.reservationRepository
+      .createQueryBuilder('reservation')
+      .select('reservation.customerId', 'customerId')
+      .addSelect('COUNT(reservation.id)::int', 'reservationsCount')
+      .addSelect(
+        "SUM(CASE WHEN reservation.status IN ('SEATED', 'COMPLETED') THEN 1 ELSE 0 END)::int",
+        'attendedCount',
+      )
+      .addSelect(
+        "SUM(CASE WHEN reservation.status = 'CANCELLED' THEN 1 ELSE 0 END)::int",
+        'cancelledCount',
+      )
+      .addSelect(
+        "SUM(CASE WHEN reservation.status = 'NO_SHOW' THEN 1 ELSE 0 END)::int",
+        'noShowCount',
+      )
+      .where('reservation.customerId IN (:...customerIds)', { customerIds })
+      .groupBy('reservation.customerId')
+      .getRawMany();
+
+    const metricsByCustomer = new Map(
+      metricsRows.map((row) => [row.customerId, row]),
+    );
+
+    return customers.map((customer) => {
+      const row = metricsByCustomer.get(customer.id);
+      return {
+        ...customer,
+        reservationsCount: Number(row?.reservationsCount ?? 0),
+        attendedCount: Number(row?.attendedCount ?? 0),
+        cancelledCount: Number(row?.cancelledCount ?? 0),
+        noShowCount: Number(row?.noShowCount ?? 0),
+      };
+    });
   }
 
   async getVisitHistory(customerId: string): Promise<ReservationEntity[]> {

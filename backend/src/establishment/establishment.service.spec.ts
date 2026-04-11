@@ -31,7 +31,7 @@ describe('EstablishmentService', () => {
 
   beforeEach(async () => {
     jest.useFakeTimers();
-    jest.setSystemTime(new Date('2026-04-06T16:00:00.000Z'));
+    jest.setSystemTime(new Date(2026, 3, 6, 10, 0, 0));
 
     tableRepository = {
       find: jest.fn(),
@@ -133,10 +133,10 @@ describe('EstablishmentService', () => {
 
     const shiftRepoInTx = {
       findOne: jest.fn().mockResolvedValue({
-        id: 'shift-vespertino',
-        shiftName: '2026-04-06:vespertino',
-        startsAt: '15:00:00',
-        endsAt: '23:00:00',
+        id: 'shift-matutino',
+        shiftName: '2026-04-06:matutino',
+        startsAt: '06:00:00',
+        endsAt: '14:00:00',
         isActive: true,
       }),
     };
@@ -145,7 +145,7 @@ describe('EstablishmentService', () => {
       id: 'wait-1',
       customerId: 'customer-1',
       requestedDate: '2026-04-06',
-      requestedShiftId: 'shift-vespertino',
+      requestedShiftId: 'shift-matutino',
       partySize: 3,
       status: WaitlistStatus.Waiting,
       notes: 'Prefiere ventana',
@@ -192,7 +192,7 @@ describe('EstablishmentService', () => {
       expect.objectContaining({
         customerId: 'customer-1',
         tableId: 'table-1',
-        shiftId: 'shift-vespertino',
+        shiftId: 'shift-matutino',
       }),
     );
     expect(waitlistRepoInTx.delete).toHaveBeenCalledWith('wait-1');
@@ -219,10 +219,10 @@ describe('EstablishmentService', () => {
 
     const shiftRepoInTx = {
       findOne: jest.fn().mockResolvedValue({
-        id: 'shift-vespertino',
-        shiftName: '2026-04-06:vespertino',
-        startsAt: '15:00:00',
-        endsAt: '23:00:00',
+        id: 'shift-matutino',
+        shiftName: '2026-04-06:matutino',
+        startsAt: '06:00:00',
+        endsAt: '14:00:00',
         isActive: true,
       }),
     };

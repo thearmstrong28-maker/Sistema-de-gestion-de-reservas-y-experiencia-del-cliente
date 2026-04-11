@@ -7,14 +7,31 @@ export const SHIFT_SLOT_WINDOWS: Record<
   { startsAt: string; endsAt: string }
 > = {
   matutino: {
-    startsAt: '08:00:00',
-    endsAt: '15:00:00',
+    startsAt: '06:00:00',
+    endsAt: '14:00:00',
   },
   vespertino: {
-    startsAt: '15:00:00',
-    endsAt: '23:00:00',
+    startsAt: '14:00:00',
+    endsAt: '22:00:00',
   },
 };
+
+const LEGACY_SHIFT_NAMES: Record<string, ShiftSlot> = {
+  breakfast: 'matutino',
+  lunch: 'vespertino',
+  dinner: 'vespertino',
+};
+
+const padTimePart = (value: number): string => String(value).padStart(2, '0');
+
+export const formatLocalDateKey = (value: Date): string =>
+  `${value.getFullYear()}-${padTimePart(value.getMonth() + 1)}-${padTimePart(value.getDate())}`;
+
+export const formatLocalTimeKey = (value: Date): string =>
+  `${padTimePart(value.getHours())}:${padTimePart(value.getMinutes())}:${padTimePart(value.getSeconds())}`;
+
+export const createLocalDateTime = (date: string, time: string): Date =>
+  new Date(`${date}T${time}`);
 
 export const isShiftSlot = (value: unknown): value is ShiftSlot =>
   value === 'matutino' || value === 'vespertino';
@@ -29,7 +46,19 @@ export const extractShiftSlot = (
     return null;
   }
 
+  if (shiftName in LEGACY_SHIFT_NAMES) {
+    return LEGACY_SHIFT_NAMES[shiftName];
+  }
+
   const candidate = shiftName.split(':').pop();
 
   return isShiftSlot(candidate) ? candidate : null;
+};
+
+export const getShiftWindow = (
+  shiftName: string | undefined,
+): { startsAt: string; endsAt: string } | null => {
+  const slot = extractShiftSlot(shiftName);
+
+  return slot ? SHIFT_SLOT_WINDOWS[slot] : null;
 };

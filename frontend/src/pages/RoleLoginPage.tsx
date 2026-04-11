@@ -35,7 +35,7 @@ const roleLoginConfigs: Record<LoginRole, RoleLoginConfig> = {
     tabLabel: 'Recepcionista',
     title: 'Acceso Recepcionista',
     description:
-      'Ingresá con tu nombre registrado o correo y contraseña para gestionar reservas y atención en puerta.',
+      'Ingresá con tu nombre registrado y contraseña para entrar al panel de recepciónista',
     submitLabel: 'Ingresar como recepcionista',
     route: '/login-recepcionista',
     expectedRole: 'host',
@@ -204,7 +204,7 @@ function RoleLoginForm({ activeRole }: RoleLoginFormProps) {
         ) : (
           <label>
             {activeConfig.authMode === 'receptionist'
-              ? 'Nombre registrado o correo electrónico'
+              ? 'Nombre registrado'
               : 'Correo electrónico'}
             <input
               type={activeConfig.authMode === 'receptionist' ? 'text' : 'email'}

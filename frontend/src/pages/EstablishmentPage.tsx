@@ -1,5 +1,4 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type PointerEvent as ReactPointerEvent } from 'react'
-import axios from 'axios'
 import {
   createInternalUser,
   createTablesBulk,
@@ -18,7 +17,6 @@ import {
   updateTable,
   updateUser,
 } from '../api/admin'
-import { verifyAdminPassword } from '../api/auth'
 import { getApiErrorMessage } from '../api/http'
 import type {
   AdminUser,
@@ -340,20 +338,6 @@ const fromStagePercent = (percent: number, min: number, max: number, inset: numb
 const getTableAvailabilityStatus = (table: RestaurantTable): 'disponible' | 'ocupada' =>
   table.availabilityStatus === 'ocupada' ? 'ocupada' : 'disponible'
 
-const getAdminUnlockErrorMessage = (error: unknown): string => {
-  if (axios.isAxiosError(error)) {
-    if (!error.response) {
-      return 'No se pudo conectar con el servidor. Verificá que el backend esté activo y la URL de la API sea correcta.'
-    }
-
-    if (error.response.status === 401) {
-      return 'La contraseña es incorrecta. Probá nuevamente.'
-    }
-  }
-
-  return getApiErrorMessage(error)
-}
-
 const decrementSummaryValue = (value: number): number => Math.max(0, value - 1)
 
 const updateSummaryAfterUserDeletion = (summary: EstablishmentSummary, user: AdminUser): EstablishmentSummary => {
@@ -377,14 +361,6 @@ const updateSummaryAfterUserDeletion = (summary: EstablishmentSummary, user: Adm
 export function AdministrationPage() {
   const profile = useAuthStore((state) => state.profile)
   const [activeTab, setActiveTab] = useState<AdminTab>('usuarios')
-  const [adminPassword, setAdminPassword] = useState('')
-  const [adminAccessState, setAdminAccessState] = useState<{ status: Status; message: string; unlocked: boolean }>(
-    {
-      status: 'idle',
-      message: 'Por seguridad, verificá tu contraseña para abrir Administración.',
-      unlocked: false,
-    },
-  )
   const [establishmentState, setEstablishmentState] = useState<ResultState<EstablishmentSummary | null>>({
     status: 'idle',
     message: '',
@@ -791,10 +767,6 @@ export function AdministrationPage() {
   )
 
   useEffect(() => {
-    if (!adminAccessState.unlocked) {
-      return
-    }
-
     const timer = window.setTimeout(() => {
       void loadOverview()
       void loadUsers()
@@ -803,32 +775,7 @@ export function AdministrationPage() {
     }, 0)
 
     return () => window.clearTimeout(timer)
-  }, [adminAccessState.unlocked, loadOverview, loadReports, loadTables, loadUsers])
-
-  const handleUnlockAdmin = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    setAdminAccessState({
-      status: 'loading',
-      message: 'Verificando contraseña de administrador...',
-      unlocked: false,
-    })
-
-    try {
-      await verifyAdminPassword(adminPassword)
-      setAdminPassword('')
-      setAdminAccessState({
-        status: 'success',
-        message: 'Acceso verificado. Bienvenido al panel de administración.',
-        unlocked: true,
-      })
-    } catch (error) {
-      setAdminAccessState({
-        status: 'error',
-        message: getAdminUnlockErrorMessage(error),
-        unlocked: false,
-      })
-    }
-  }
+  }, [loadOverview, loadReports, loadTables, loadUsers])
 
   const handleCreateUser = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -1263,41 +1210,6 @@ export function AdministrationPage() {
 
   const maxComparisonValue = Math.max(1, ...comparisonState.data.map((row) => row.reservationsCount))
 
-  if (!adminAccessState.unlocked) {
-    return (
-      <section className="page-stack establishment-page fade-in">
-        <article className="panel form-panel auth-card">
-          <div className="auth-intro">
-            <p className="eyebrow">Acceso protegido</p>
-            <h2>Administrador</h2>
-            <p className="muted">
-              Cada ingreso a esta pantalla solicita tu contraseña de administrador.
-            </p>
-          </div>
-
-          <form className="form-panel" onSubmit={handleUnlockAdmin}>
-            <label>
-              Contraseña de inicio de sesión
-              <input
-                type="password"
-                value={adminPassword}
-                onChange={(event) => setAdminPassword(event.target.value)}
-                autoComplete="current-password"
-                required
-              />
-            </label>
-
-            <button type="submit" className="button button-primary">
-              Verificar contraseña
-            </button>
-          </form>
-
-          <StatusMessage status={adminAccessState.status} message={adminAccessState.message} />
-        </article>
-      </section>
-    )
-  }
-
   return (
     <section className="page-stack establishment-page fade-in">
       <article className="panel establishment-hero">
@@ -1305,8 +1217,6 @@ export function AdministrationPage() {
           <p className="eyebrow">Panel administrativo</p>
           <h2>Administración</h2>
           <p className="lead">{restaurantName}</p>
-          <p className="muted">Usuarios, mesas y reportes operativos en un solo lugar.</p>
-          <p className="muted">Nota: la asignación manual de mesas queda para Recepcionista.</p>
         </div>
 
         <div className="summary-grid establishment-overview-grid">
@@ -1596,7 +1506,6 @@ export function AdministrationPage() {
 
             <div className="tables-stage-meta">
               <p className="muted">Arrastrá mesas dentro del plano para reubicar su posición.</p>
-              <p className="subtle">La disponibilidad se cambia desde cada mesa y se refleja en el color.</p>
             </div>
 
             <div className="tables-status-legend" aria-label="Leyenda de estado de mesas">

@@ -91,7 +91,7 @@ export class ReservationsController {
     return this.reservationsService.listTablesLayout();
   }
 
-  @Roles(Role.Admin, Role.Host)
+  @Roles(Role.Admin, Role.Host, Role.Manager)
   @Get()
   list(@Query() query: ListReservationsQueryDto) {
     return this.reservationsService.list(query);

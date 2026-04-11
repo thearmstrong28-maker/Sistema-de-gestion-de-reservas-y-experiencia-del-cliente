@@ -3,6 +3,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { CustomerEntity } from '../customers/entities/customer.entity';
 import { ShiftEntity } from '../shifts/entities/shift.entity';
 import { WaitlistEntryEntity } from './entities/waitlist-entry.entity';
+import { WaitlistStatus } from './enums/waitlist-status.enum';
 import { WaitlistService } from './waitlist.service';
 
 describe('WaitlistService', () => {
@@ -75,6 +76,78 @@ describe('WaitlistService', () => {
 
     expect(waitlistRepository.createQueryBuilder).toHaveBeenCalled();
     expect(result.position).toBe(3);
+  });
+
+  it('reuses an existing waiting entry for the same date and shift', async () => {
+    const existingEntry = {
+      id: 'wait-1',
+      customerId: 'customer-1',
+      requestedShiftId: 'shift-1',
+      requestedDate: '2026-04-06',
+      partySize: 2,
+      status: WaitlistStatus.Waiting,
+      position: 1,
+      notes: null,
+    };
+
+    waitlistRepository.findOne.mockResolvedValueOnce(existingEntry);
+
+    const result = await service.create({
+      customerId: 'customer-1',
+      requestedShiftId: 'shift-1',
+      requestedDate: new Date('2026-04-06T00:00:00.000Z'),
+      partySize: 2,
+    });
+
+    expect(result).toBe(existingEntry);
+    expect(waitlistRepository.save).not.toHaveBeenCalled();
+    expect(waitlistRepository.findOne).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          customerId: 'customer-1',
+          requestedShiftId: 'shift-1',
+          requestedDate: '2026-04-06',
+        }),
+      }),
+    );
+  });
+
+  it('returns the existing waiting entry when a unique constraint race happens on save', async () => {
+    const existingEntry = {
+      id: 'wait-1',
+      customerId: 'customer-1',
+      requestedShiftId: 'shift-1',
+      requestedDate: '2026-04-06',
+      partySize: 2,
+      status: WaitlistStatus.Waiting,
+      position: 1,
+      notes: null,
+    };
+
+    waitlistRepository.findOne
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(existingEntry);
+    waitlistRepository.save.mockRejectedValueOnce({ code: '23505' });
+
+    const result = await service.create({
+      customerId: 'customer-1',
+      requestedShiftId: 'shift-1',
+      requestedDate: new Date('2026-04-06T00:00:00.000Z'),
+      partySize: 2,
+    });
+
+    expect(result).toBe(existingEntry);
+    expect(waitlistRepository.save).toHaveBeenCalledTimes(1);
+    expect(waitlistRepository.findOne).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        where: expect.objectContaining({
+          customerId: 'customer-1',
+          requestedShiftId: 'shift-1',
+          requestedDate: '2026-04-06',
+        }),
+      }),
+    );
   });
 
   it('lists waitlist entries ordered by position then creation date', async () => {

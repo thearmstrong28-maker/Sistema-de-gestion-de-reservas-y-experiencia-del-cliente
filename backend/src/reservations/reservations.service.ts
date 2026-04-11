@@ -18,6 +18,9 @@ import { CustomerEntity } from '../customers/entities/customer.entity';
 import { ShiftEntity } from '../shifts/entities/shift.entity';
 import {
   buildShiftName,
+  extractShiftSlot,
+  formatLocalDateKey,
+  formatLocalTimeKey,
   SHIFT_SLOT_WINDOWS,
   type ShiftSlot,
 } from '../shifts/shift-slot';
@@ -400,7 +403,7 @@ export class ReservationsService {
       throw new BadRequestException('Reservation end must be after start');
     }
 
-    const reservationDate = normalizedStart.toISOString().slice(0, 10);
+    const reservationDate = formatLocalDateKey(normalizedStart);
     return {
       startsAt: normalizedStart,
       endsAt: normalizedEnd,
@@ -421,7 +424,7 @@ export class ReservationsService {
       throw new BadRequestException('ShiftId or turno is required');
     }
 
-    const reservationDate = startsAt.toISOString().slice(0, 10);
+    const reservationDate = formatLocalDateKey(startsAt);
     const shiftName = buildShiftName(reservationDate, turno);
     const window = SHIFT_SLOT_WINDOWS[turno];
 
@@ -430,7 +433,13 @@ export class ReservationsService {
     });
 
     if (existing) {
-      if (!existing.isActive) {
+      const shouldNormalize =
+        existing.shiftDate !== reservationDate ||
+        existing.startsAt !== window.startsAt ||
+        existing.endsAt !== window.endsAt ||
+        !existing.isActive;
+
+      if (shouldNormalize) {
         existing.isActive = true;
         existing.shiftDate = reservationDate;
         existing.startsAt = window.startsAt;
@@ -455,8 +464,8 @@ export class ReservationsService {
   private validateReservationWindow(startsAt: Date): void {
     const now = new Date();
     const maxDaysAhead = this.getNumberConfig('RESERVATION_MAX_DAYS_AHEAD', 30);
-    const reservationDate = startsAt.toISOString().slice(0, 10);
-    const today = now.toISOString().slice(0, 10);
+    const reservationDate = formatLocalDateKey(startsAt);
+    const today = formatLocalDateKey(now);
     const latestAllowed = new Date(
       now.getTime() + maxDaysAhead * 24 * 60 * 60_000,
     );
@@ -483,13 +492,20 @@ export class ReservationsService {
       throw new BadRequestException('Reservation date must match shift date');
     }
 
-    const startTime = startsAt.toISOString().slice(11, 19);
-    const endTime = endsAt.toISOString().slice(11, 19);
-    const shiftStart = `${shift.startsAt}:00`.slice(0, 8);
-    const shiftEnd = `${shift.endsAt}:00`.slice(0, 8);
+    const startTime = formatLocalTimeKey(startsAt);
+    const endTime = formatLocalTimeKey(endsAt);
+    const shiftSlot = extractShiftSlot(shift.shiftName);
+    const shiftWindow = shiftSlot
+      ? SHIFT_SLOT_WINDOWS[shiftSlot]
+      : {
+          startsAt: `${shift.startsAt}:00`.slice(0, 8),
+          endsAt: `${shift.endsAt}:00`.slice(0, 8),
+        };
 
-    if (startTime < shiftStart || endTime > shiftEnd) {
-      throw new BadRequestException('Reservation is outside shift hours');
+    if (startTime < shiftWindow.startsAt || endTime > shiftWindow.endsAt) {
+      throw new BadRequestException(
+        'La reserva debe caer dentro del horario del turno (06:00-14:00 o 14:00-22:00)',
+      );
     }
   }
 

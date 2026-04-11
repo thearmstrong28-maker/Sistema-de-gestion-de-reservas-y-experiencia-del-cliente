@@ -21,7 +21,7 @@ import { ReportsService } from './reports.service';
 
 @Controller('reports')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.Admin)
+@Roles(Role.Admin, Role.Manager)
 export class ReportsController {
   constructor(private readonly reportsService: ReportsService) {}
 
@@ -57,6 +57,7 @@ export class ReportsController {
   }
 
   @Delete('snapshots/:id')
+  @Roles(Role.Admin)
   deleteSnapshot(
     @Req() request: Request & { user: AuthenticatedUser },
     @Param('id') id: string,

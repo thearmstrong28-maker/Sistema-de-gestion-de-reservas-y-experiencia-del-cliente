@@ -19,7 +19,7 @@ import { CustomersService } from './customers.service';
 
 @Controller('customers')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.Admin, Role.Host)
+@Roles(Role.Admin, Role.Host, Role.Manager)
 export class CustomersController {
   constructor(private readonly customersService: CustomersService) {}
 
@@ -44,5 +44,10 @@ export class CustomersController {
   @Get()
   list(@Query() query: ListCustomersQueryDto) {
     return this.customersService.list(query);
+  }
+
+  @Get('metrics')
+  listWithMetrics(@Query() query: ListCustomersQueryDto) {
+    return this.customersService.listWithMetrics(query);
   }
 }

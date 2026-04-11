@@ -17,6 +17,10 @@ import {
 } from '../reservations/enums/reservation-status.enum';
 import {
   buildShiftName,
+  createLocalDateTime,
+  extractShiftSlot,
+  formatLocalDateKey,
+  formatLocalTimeKey,
   type ShiftSlot,
   SHIFT_SLOT_WINDOWS,
 } from '../shifts/shift-slot';
@@ -309,7 +313,7 @@ export class EstablishmentService {
       return false;
     }
 
-    const reservationDate = now.toISOString().slice(0, 10);
+    const reservationDate = formatLocalDateKey(now);
     const shiftName = buildShiftName(reservationDate, currentSlot);
     const shiftRepository = manager.getRepository(ShiftEntity);
     const shift = await shiftRepository.findOne({
@@ -320,8 +324,18 @@ export class EstablishmentService {
       return false;
     }
 
-    const shiftStart = this.toUtcDate(reservationDate, shift.startsAt);
-    const shiftEnd = this.toUtcDate(reservationDate, shift.endsAt);
+    const shiftSlot = extractShiftSlot(shift.shiftName);
+    const shiftWindow = shiftSlot
+      ? SHIFT_SLOT_WINDOWS[shiftSlot]
+      : {
+          startsAt: shift.startsAt,
+          endsAt: shift.endsAt,
+        };
+    const shiftStart = createLocalDateTime(
+      reservationDate,
+      shiftWindow.startsAt,
+    );
+    const shiftEnd = createLocalDateTime(reservationDate, shiftWindow.endsAt);
     const startsAt = now > shiftStart ? now : shiftStart;
     const defaultDurationMinutes = 90;
     const endsAt = new Date(
@@ -400,7 +414,7 @@ export class EstablishmentService {
   }
 
   private resolveCurrentSlot(now: Date): ShiftSlot | null {
-    const currentTime = now.toISOString().slice(11, 19);
+    const currentTime = formatLocalTimeKey(now);
 
     if (
       currentTime >= SHIFT_SLOT_WINDOWS.matutino.startsAt &&
@@ -417,9 +431,5 @@ export class EstablishmentService {
     }
 
     return null;
-  }
-
-  private toUtcDate(date: string, time: string): Date {
-    return new Date(`${date}T${time}Z`);
   }
 }

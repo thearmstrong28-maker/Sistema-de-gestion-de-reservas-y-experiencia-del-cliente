@@ -67,15 +67,15 @@ const TODAY = toDateInputValue(new Date().toISOString())
 const TURN_CONFIG: Record<ReceptionistTurn, { label: string; defaultTime: string; min: string; max: string }> = {
   matutino: {
     label: 'Matutino',
-    defaultTime: '09:00',
-    min: '08:00',
-    max: '15:00',
+    defaultTime: '06:00',
+    min: '06:00',
+    max: '14:00',
   },
   vespertino: {
     label: 'Vespertino',
-    defaultTime: '16:00',
-    min: '15:00',
-    max: '23:00',
+    defaultTime: '14:00',
+    min: '14:00',
+    max: '22:00',
   },
 }
 
@@ -118,7 +118,7 @@ const resolveTurnFromTime = (time: string): ReceptionistTurn => {
 
   const totalMinutes = hours * 60 + minutes
 
-  return totalMinutes >= 15 * 60 ? 'vespertino' : 'matutino'
+  return totalMinutes >= 14 * 60 ? 'vespertino' : 'matutino'
 }
 
 const formatShiftTime = (value: string): string => value.slice(0, 5)
@@ -144,7 +144,7 @@ const getShiftForReservationForm = (
 ): Shift | null => {
   const shiftsForDate = shifts.filter((shift) => shift.shiftDate === date)
 
-  return shiftsForDate.find((shift) => resolveTurnFromShiftName(shift.shiftName) === turn) ?? shiftsForDate[0] ?? null
+  return shiftsForDate.find((shift) => resolveTurnFromShiftName(shift.shiftName) === turn) ?? null
 }
 
 const getShiftHint = (
@@ -192,13 +192,13 @@ const getSuggestedReservationDateTime = (): { date: string; time: string; turn: 
   const currentMinutes = now.getHours() * 60 + now.getMinutes()
   const roundedMinutes = Math.ceil(currentMinutes / 15) * 15
 
-  if (roundedMinutes < 15 * 60) {
-    const nextTime = toTimeValue(Math.max(8 * 60, roundedMinutes))
+  if (roundedMinutes < 14 * 60) {
+    const nextTime = toTimeValue(Math.max(6 * 60, roundedMinutes))
     return { date, time: nextTime, turn: 'matutino' }
   }
 
-  if (roundedMinutes < 23 * 60) {
-    const nextTime = toTimeValue(Math.max(15 * 60, roundedMinutes))
+  if (roundedMinutes < 22 * 60) {
+    const nextTime = toTimeValue(Math.max(14 * 60, roundedMinutes))
     return { date, time: nextTime, turn: 'vespertino' }
   }
 
@@ -310,8 +310,8 @@ export function ReceptionistPage() {
     data: null,
   })
   const turnHint = useMemo(
-    () => getShiftHint(shifts, reservationForm.date, reservationForm.turn),
-    [reservationForm.date, reservationForm.turn, shifts],
+    () => getShiftHint(shifts, reservationForm.date, resolveTurnFromTime(reservationForm.time)),
+    [reservationForm.date, reservationForm.time, shifts],
   )
   const visibleTableIdentifierById = useMemo(() => {
     const sortedTables = [...tables].sort((left, right) => {
@@ -579,7 +579,8 @@ export function ReceptionistPage() {
       return
     }
 
-    const shiftHint = getShiftHint(shifts, reservationForm.date, reservationForm.turn)
+    const selectedTurn = resolveTurnFromTime(reservationForm.time)
+    const shiftHint = getShiftHint(shifts, reservationForm.date, selectedTurn)
     const selectedMinutes = toMinutes(reservationForm.time)
     const minMinutes = toMinutes(shiftHint.min)
     const maxMinutes = toMinutes(shiftHint.max)
@@ -587,7 +588,7 @@ export function ReceptionistPage() {
     if (!Number.isFinite(selectedMinutes) || selectedMinutes < minMinutes || selectedMinutes > maxMinutes) {
       setReservationState({
         status: 'error',
-        message: `La hora elegida queda fuera del horario real del turno (${shiftHint.window}). Elegi una hora dentro de esa franja.`,
+        message: `La hora elegida queda fuera del horario permitido del turno (${shiftHint.window}). Elegi una hora dentro de esa franja.`,
         data: null,
       })
       return
@@ -608,7 +609,7 @@ export function ReceptionistPage() {
     try {
       const payload = {
         customerId: matchedCustomer.id,
-        turno: reservationForm.turn,
+        turno: selectedTurn,
         partySize,
         startsAt,
         ...(reservationForm.specialRequests.trim()
@@ -655,8 +656,9 @@ export function ReceptionistPage() {
             ? 'Solo se pueden editar reservas activas. Si la reserva ya fue cancelada, marcada como no asistió o finalizada, no se puede guardar.'
             : apiMessage === 'Reservation date must match shift date'
             ? 'La fecha de la reserva no coincide con el turno seleccionado. Elegi la fecha y horario nuevamente e intenta guardar otra vez.'
-            : apiMessage === 'Reservation is outside shift hours'
-            ? 'La hora elegida queda fuera del horario real del turno. Revisala y probá de nuevo.'
+            : apiMessage === 'La reserva debe caer dentro del horario del turno (06:00-14:00 o 14:00-22:00)' ||
+              apiMessage === 'Reservation is outside shift hours'
+            ? 'La hora elegida queda fuera del horario permitido del turno (06:00-14:00 o 14:00-22:00). Revisala y probá de nuevo.'
             : apiMessage === 'Reservation start is outside allowed window'
             ? 'La hora elegida ya quedó fuera de la ventana operativa. Elegí una hora actual o futura dentro del turno.'
             : apiMessage,
@@ -730,7 +732,6 @@ export function ReceptionistPage() {
           <p className="eyebrow">Operacion diaria de recepcion</p>
           <h2>Recepcion</h2>
         </div>
-        <p className="muted">Reservas, clientes y lista de espera en una sola vista.</p>
       </div>
 
       <article className="panel form-panel tables-showcase-panel">
@@ -739,15 +740,9 @@ export function ReceptionistPage() {
             <p className="eyebrow">Mesas</p>
             <h3>Maqueta visual del salon</h3>
           </div>
-          <span className="chip">Edicion parcial</span>
         </div>
 
         <StatusMessage status={tablesState.status} message={tablesState.message} />
-
-        <div className="tables-stage-meta">
-          <p className="muted">Vista de referencia para consultar la distribucion y el estado actual de cada mesa.</p>
-          <p className="subtle">Desde aqui se puede marcar una mesa como ocupada o disponible.</p>
-        </div>
 
         <div className="tables-status-legend" aria-label="Leyenda de estado de mesas">
           <span className="tables-legend-item">
@@ -823,10 +818,6 @@ export function ReceptionistPage() {
             onSubmit={handleReservationSubmit}
           >
             <h3>Crear reserva</h3>
-            <p className="form-hint">
-              El turno se deriva por la hora elegida. Ventana actual: {turnHint.window}.
-            </p>
-
             <label>
               Nombre del cliente
               <input
@@ -925,7 +916,11 @@ export function ReceptionistPage() {
             ) : null}
 
             <div className="button-row">
-              <button type="submit" className="button button-primary">
+              <button
+                type="submit"
+                className="button button-primary"
+                disabled={reservationState.status === 'loading'}
+              >
                 {editingReservationId ? 'Guardar cambios' : 'Crear reserva'}
               </button>
               {editingReservationId ? (
@@ -942,10 +937,6 @@ export function ReceptionistPage() {
               <h3>Lista de espera</h3>
               <span className="chip">{formatDate(viewDate)}</span>
             </div>
-
-            <p className="form-hint">
-              Las reservas sin mesa quedan en espera y se asignan automaticamente cuando se libera una mesa.
-            </p>
 
             <div className="history-list receptionist-scroll-list receptionist-waitlist-list receptionist-waitlist-scroll">
               {sortedWaitlist.length ? (

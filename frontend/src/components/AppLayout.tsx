@@ -1,4 +1,4 @@
-import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../store/auth'
 import { formatUserRole } from '../lib/labels'
 
@@ -49,9 +49,6 @@ export function AppLayout() {
             <p className="eyebrow">Sistema de reservas</p>
           )}
           <h1>{pageTitle}</h1>
-          {isRegisterPage || isLoginPage || isAdminPage ? null : (
-            <p className="lead">Gestioná tus reservas y la experiencia de tus clientes.</p>
-          )}
         </div>
 
         <div className="session-actions">
@@ -73,7 +70,7 @@ export function AppLayout() {
         </div>
       </header>
 
-      {location.pathname === '/' || isRegisterPage || isLoginPage ? null : (
+      {location.pathname === '/' || isRegisterPage || isLoginPage || isAdminPage || isReceptionistPage || isManagerPage ? null : (
         <nav className="tabbar" aria-label="Secciones principales">
           {tabs
             .filter((tab) => (isAdminPage ? tab.to !== '/' : true))

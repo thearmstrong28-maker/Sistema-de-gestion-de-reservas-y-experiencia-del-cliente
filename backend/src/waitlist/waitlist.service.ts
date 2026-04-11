@@ -5,6 +5,7 @@ import { CustomerEntity } from '../customers/entities/customer.entity';
 import { ShiftEntity } from '../shifts/entities/shift.entity';
 import {
   buildShiftName,
+  extractShiftSlot,
   SHIFT_SLOT_WINDOWS,
   type ShiftSlot,
 } from '../shifts/shift-slot';
@@ -12,7 +13,10 @@ import { CreateWaitlistEntryDto } from './dto/create-waitlist-entry.dto';
 import { ListWaitlistQueryDto } from './dto/list-waitlist.query';
 import { UpdateWaitlistEntryDto } from './dto/update-waitlist-entry.dto';
 import { WaitlistEntryEntity } from './entities/waitlist-entry.entity';
-import { ACTIVE_WAITLIST_STATUSES } from './enums/waitlist-status.enum';
+import {
+  ACTIVE_WAITLIST_STATUSES,
+  WaitlistStatus,
+} from './enums/waitlist-status.enum';
 
 @Injectable()
 export class WaitlistService {
@@ -39,6 +43,16 @@ export class WaitlistService {
       .toISOString()
       .slice(0, 10);
 
+    const existingEntry = await this.findExistingWaitingEntry(
+      createWaitlistEntryDto.customerId,
+      requestedDate,
+      requestedShift?.id ?? null,
+    );
+
+    if (existingEntry) {
+      return existingEntry;
+    }
+
     const position =
       createWaitlistEntryDto.position ??
       (await this.getNextPosition(requestedDate, requestedShift?.id));
@@ -52,7 +66,12 @@ export class WaitlistService {
       position,
     });
 
-    return this.waitlistRepository.save(entry);
+    return this.saveWaitlistEntry(
+      entry,
+      createWaitlistEntryDto.customerId,
+      requestedDate,
+      requestedShift?.id ?? null,
+    );
   }
 
   async list(query: ListWaitlistQueryDto): Promise<WaitlistEntryEntity[]> {
@@ -127,11 +146,21 @@ export class WaitlistService {
     });
 
     if (existing) {
-      if (!existing.isActive) {
+      const existingSlot = extractShiftSlot(existing.shiftName);
+      const existingWindow = existingSlot
+        ? SHIFT_SLOT_WINDOWS[existingSlot]
+        : window;
+      const shouldNormalize =
+        existing.shiftDate !== shiftDate ||
+        existing.startsAt !== existingWindow.startsAt ||
+        existing.endsAt !== existingWindow.endsAt ||
+        !existing.isActive;
+
+      if (shouldNormalize) {
         existing.isActive = true;
         existing.shiftDate = shiftDate;
-        existing.startsAt = window.startsAt;
-        existing.endsAt = window.endsAt;
+        existing.startsAt = existingWindow.startsAt;
+        existing.endsAt = existingWindow.endsAt;
         return this.shiftRepository.save(existing);
       }
 
@@ -169,5 +198,54 @@ export class WaitlistService {
       .getRawOne<{ maxPosition: string }>();
 
     return Number(rows?.maxPosition ?? 0) + 1;
+  }
+
+  private async findExistingWaitingEntry(
+    customerId: string,
+    requestedDate: string,
+    requestedShiftId: string | null,
+  ): Promise<WaitlistEntryEntity | null> {
+    return this.waitlistRepository.findOne({
+      where: {
+        customerId,
+        requestedDate,
+        requestedShiftId,
+        status: WaitlistStatus.Waiting,
+      },
+    });
+  }
+
+  private async saveWaitlistEntry(
+    entry: WaitlistEntryEntity,
+    customerId: string,
+    requestedDate: string,
+    requestedShiftId: string | null,
+  ): Promise<WaitlistEntryEntity> {
+    try {
+      return await this.waitlistRepository.save(entry);
+    } catch (error) {
+      if (this.isPostgresConstraintError(error, '23505')) {
+        const fallback = await this.findExistingWaitingEntry(
+          customerId,
+          requestedDate,
+          requestedShiftId,
+        );
+
+        if (fallback) {
+          return fallback;
+        }
+      }
+
+      throw error;
+    }
+  }
+
+  private isPostgresConstraintError(error: unknown, code: string): boolean {
+    if (typeof error !== 'object' || error === null) {
+      return false;
+    }
+
+    const maybe = error as { code?: string; driverError?: { code?: string } };
+    return maybe.code === code || maybe.driverError?.code === code;
   }
 }

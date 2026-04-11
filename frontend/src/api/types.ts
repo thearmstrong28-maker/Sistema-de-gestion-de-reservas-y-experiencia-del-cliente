@@ -74,6 +74,13 @@ export interface Customer {
   updatedAt: string
 }
 
+export interface CustomerWithMetrics extends Customer {
+  reservationsCount: number
+  attendedCount: number
+  cancelledCount: number
+  noShowCount: number
+}
+
 export interface Reservation {
   id: string
   customerId: string
