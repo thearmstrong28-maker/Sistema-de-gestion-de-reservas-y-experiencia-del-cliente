@@ -6,6 +6,7 @@ import { ShiftEntity } from '../shifts/entities/shift.entity';
 import { ReservationsController } from './reservations.controller';
 import { ReservationEntity } from './entities/reservation.entity';
 import { RestaurantTableEntity } from './entities/table.entity';
+import { WaitlistEntryEntity } from '../waitlist/entities/waitlist-entry.entity';
 import { ReservationsService } from './reservations.service';
 
 @Module({
@@ -16,6 +17,7 @@ import { ReservationsService } from './reservations.service';
       RestaurantTableEntity,
       ShiftEntity,
       CustomerEntity,
+      WaitlistEntryEntity,
     ]),
   ],
   controllers: [ReservationsController],

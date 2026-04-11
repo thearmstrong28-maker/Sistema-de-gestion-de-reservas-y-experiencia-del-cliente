@@ -80,6 +80,12 @@
   width: 100%;
 }
 
+.form-panel input[readonly] {
+  cursor: default;
+  caret-color: transparent;
+  background: rgba(255, 255, 255, 0.58);
+}
+
 .tabbar {
   display: flex;
   gap: 10px;
@@ -721,6 +727,18 @@
   flex: 0 0 auto;
 }
 
+.reservation-status-control {
+  display: grid;
+  gap: 4px;
+  min-width: 190px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.reservation-status-control select {
+  min-height: 40px;
+}
+
 .tabbar-compact {
   padding-bottom: 4px;
 }
@@ -773,6 +791,21 @@
 .button-icon-delete:hover:not(:disabled) {
   background: rgba(185, 28, 28, 0.16);
   border-color: rgba(185, 28, 28, 0.72);
+}
+
+.button-icon-send {
+  color: #0f766e;
+  border-color: rgba(15, 118, 110, 0.45);
+  background: rgba(15, 118, 110, 0.09);
+}
+
+.button-icon-send .button-icon-image {
+  filter: invert(34%) sepia(97%) saturate(502%) hue-rotate(129deg) brightness(91%) contrast(89%);
+}
+
+.button-icon-send:hover:not(:disabled) {
+  background: rgba(15, 118, 110, 0.16);
+  border-color: rgba(15, 118, 110, 0.7);
 }
 
 .button-icon-no-show {

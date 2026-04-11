@@ -17,6 +17,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import type { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { CreateReservationDto } from './dto/create-reservation.dto';
 import { CheckAvailabilityDto } from './dto/check-availability.dto';
+import { UpdateReservationStatusDto } from './dto/update-reservation-status.dto';
 import { UpdateReservationDto } from './dto/update-reservation.dto';
 import { AssignTableDto } from './dto/assign-table.dto';
 import { ListReservationsQueryDto } from './dto/list-reservations.query';
@@ -46,6 +47,18 @@ export class ReservationsController {
     @Body() updateReservationDto: UpdateReservationDto,
   ) {
     return this.reservationsService.update(id, updateReservationDto);
+  }
+
+  @Roles(Role.Admin, Role.Host)
+  @Patch(':id/status')
+  updateStatus(
+    @Param('id') id: string,
+    @Body() updateReservationStatusDto: UpdateReservationStatusDto,
+  ) {
+    return this.reservationsService.updateStatus(
+      id,
+      updateReservationStatusDto.status,
+    );
   }
 
   @Roles(Role.Admin, Role.Host)

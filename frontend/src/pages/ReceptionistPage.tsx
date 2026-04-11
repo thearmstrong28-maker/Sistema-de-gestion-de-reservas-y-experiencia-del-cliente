@@ -1,18 +1,27 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import axios from 'axios'
 import {
-  cancelReservation,
   createCustomer,
+  assignReservationTable,
   createReservation,
   listCustomers,
   listReservations,
   listShifts,
   listWaitlist,
   listTablesLayout,
-  markReservationNoShow,
+  updateTableAvailability,
   updateReservation,
+  updateReservationStatus,
 } from '../api/receptionist'
-import type { Customer, RestaurantTable, Reservation, Shift, WaitlistEntry } from '../api/types'
+import type {
+  Customer,
+  RestaurantTable,
+  Reservation,
+  ReservationStatus,
+  Shift,
+  TableAvailabilityStatus,
+  WaitlistEntry,
+} from '../api/types'
 import { getApiErrorMessage } from '../api/http'
 import { StatusMessage } from '../components/StatusMessage'
 import { TableLayoutStage } from '../components/TableLayoutStage'
@@ -26,8 +35,7 @@ import {
 import { formatReservationStatus, formatTableAvailabilityStatus, formatTableIdentifier, formatWaitlistStatus } from '../lib/labels'
 import { buildLayoutBounds, getTableAvailabilityStatus, hydrateTablesLayout, type LayoutBounds } from '../lib/tableLayout'
 import editIcon from '../assets/icon-edit.png'
-import deleteIcon from '../assets/icon-delete.png'
-import availabilityIcon from '../assets/icon-availability.png'
+import sendIcon from '../assets/icon-send.svg'
 
 type Status = 'idle' | 'loading' | 'success' | 'error'
 type ReceptionistTurn = 'matutino' | 'vespertino'
@@ -56,18 +64,18 @@ interface CustomerFormState {
 
 const TODAY = toDateInputValue(new Date().toISOString())
 
-const TURN_CONFIG: Record<ReceptionistTurn, { label: string; shiftName: string; defaultTime: string; window: string }> = {
+const TURN_CONFIG: Record<ReceptionistTurn, { label: string; defaultTime: string; min: string; max: string }> = {
   matutino: {
     label: 'Matutino',
-    shiftName: 'breakfast',
     defaultTime: '09:00',
-    window: '08:00 - 11:00',
+    min: '08:00',
+    max: '15:00',
   },
   vespertino: {
     label: 'Vespertino',
-    shiftName: 'lunch',
-    defaultTime: '13:00',
-    window: '12:00 - 15:00',
+    defaultTime: '16:00',
+    min: '15:00',
+    max: '23:00',
   },
 }
 
@@ -75,6 +83,17 @@ const TURN_LABELS: Record<ReceptionistTurn, string> = {
   matutino: 'Matutino',
   vespertino: 'Vespertino',
 }
+
+const FINAL_RESERVATION_STATUS_OPTIONS: Array<{ value: ReservationStatus; label: string }> = [
+  { value: 'COMPLETED', label: 'Se presentó' },
+  { value: 'CANCELLED', label: 'Cancelada por cliente' },
+  { value: 'NO_SHOW', label: 'No asistió' },
+]
+
+const EDITABLE_RESERVATION_STATUSES: ReservationStatus[] = ['PENDING', 'CONFIRMED', 'SEATED']
+
+const canEditReservation = (status: ReservationStatus): boolean =>
+  EDITABLE_RESERVATION_STATUSES.includes(status)
 
 const resolveTurnFromShiftName = (shiftName?: string | null): ReceptionistTurn => {
   if (!shiftName) {
@@ -99,7 +118,98 @@ const resolveTurnFromTime = (time: string): ReceptionistTurn => {
 
   const totalMinutes = hours * 60 + minutes
 
-  return totalMinutes >= 12 * 60 ? 'vespertino' : 'matutino'
+  return totalMinutes >= 15 * 60 ? 'vespertino' : 'matutino'
+}
+
+const formatShiftTime = (value: string): string => value.slice(0, 5)
+
+const formatShiftWindow = (startsAt: string, endsAt: string): string =>
+  `${formatShiftTime(startsAt)} - ${formatShiftTime(endsAt)}`
+
+const getTurnHint = (turn: ReceptionistTurn): { label: string; min: string; max: string; window: string } => {
+  const config = TURN_CONFIG[turn]
+
+  return {
+    label: config.label,
+    min: config.min,
+    max: config.max,
+    window: `${config.min} - ${config.max}`,
+  }
+}
+
+const getShiftForReservationForm = (
+  shifts: Shift[],
+  date: string,
+  turn: ReceptionistTurn,
+): Shift | null => {
+  const shiftsForDate = shifts.filter((shift) => shift.shiftDate === date)
+
+  return shiftsForDate.find((shift) => resolveTurnFromShiftName(shift.shiftName) === turn) ?? shiftsForDate[0] ?? null
+}
+
+const getShiftHint = (
+  shifts: Shift[],
+  date: string,
+  turn: ReceptionistTurn,
+): { label: string; min: string; max: string; window: string } => {
+  const shift = getShiftForReservationForm(shifts, date, turn)
+
+  if (!shift) {
+    return getTurnHint(turn)
+  }
+
+  return {
+    label: TURN_LABELS[resolveTurnFromShiftName(shift.shiftName)],
+    min: formatShiftTime(shift.startsAt),
+    max: formatShiftTime(shift.endsAt),
+    window: formatShiftWindow(shift.startsAt, shift.endsAt),
+  }
+}
+
+const toMinutes = (time: string): number => {
+  const [hoursText, minutesText] = time.split(':')
+  const hours = Number(hoursText)
+  const minutes = Number(minutesText)
+
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) {
+    return Number.NaN
+  }
+
+  return hours * 60 + minutes
+}
+
+const toTimeValue = (minutes: number): string => {
+  const boundedMinutes = Math.max(0, Math.min(minutes, 23 * 60 + 59))
+  const hours = Math.floor(boundedMinutes / 60)
+  const mins = boundedMinutes % 60
+
+  return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`
+}
+
+const getSuggestedReservationDateTime = (): { date: string; time: string; turn: ReceptionistTurn } => {
+  const now = new Date()
+  const date = toDateInputValue(now.toISOString())
+  const currentMinutes = now.getHours() * 60 + now.getMinutes()
+  const roundedMinutes = Math.ceil(currentMinutes / 15) * 15
+
+  if (roundedMinutes < 15 * 60) {
+    const nextTime = toTimeValue(Math.max(8 * 60, roundedMinutes))
+    return { date, time: nextTime, turn: 'matutino' }
+  }
+
+  if (roundedMinutes < 23 * 60) {
+    const nextTime = toTimeValue(Math.max(15 * 60, roundedMinutes))
+    return { date, time: nextTime, turn: 'vespertino' }
+  }
+
+  const tomorrow = new Date(now)
+  tomorrow.setDate(tomorrow.getDate() + 1)
+
+  return {
+    date: toDateInputValue(tomorrow.toISOString()),
+    time: TURN_CONFIG.matutino.defaultTime,
+    turn: 'matutino',
+  }
 }
 
 const formatShiftLabel = (shiftName?: string | null): string => {
@@ -112,9 +222,7 @@ const formatShiftLabel = (shiftName?: string | null): string => {
 
 const emptyReservationForm = (): ReservationFormState => ({
   customerName: '',
-  date: TODAY,
-  time: TURN_CONFIG.matutino.defaultTime,
-  turn: 'matutino',
+  ...getSuggestedReservationDateTime(),
   partySize: '2',
   specialRequests: '',
 })
@@ -141,16 +249,15 @@ const buildReservationFormFromItem = (
   customers: Customer[],
 ): ReservationFormState => {
   const time = toTimeInputValue(reservation.startsAt)
+  const resolvedTime = time || TURN_CONFIG.matutino.defaultTime
   const customerName =
     reservation.customer?.fullName ?? customers.find((customer) => customer.id === reservation.customerId)?.fullName ?? ''
 
   return {
     customerName,
-    date: toDateInputValue(reservation.startsAt),
-    time: time || TURN_CONFIG.matutino.defaultTime,
-    turn: reservation.shift?.shiftName
-      ? resolveTurnFromShiftName(reservation.shift.shiftName)
-      : resolveTurnFromTime(time),
+    date: reservation.reservationDate,
+    time: resolvedTime,
+    turn: resolveTurnFromTime(resolvedTime),
     partySize: String(reservation.partySize),
     specialRequests: reservation.specialRequests ?? '',
   }
@@ -163,7 +270,7 @@ export function ReceptionistPage() {
   const [customerForm, setCustomerForm] = useState(emptyCustomerForm)
   const [customerSearchQuery, setCustomerSearchQuery] = useState('')
   const [viewDate, setViewDate] = useState(TODAY)
-  const [, setShifts] = useState<Shift[]>([])
+  const [shifts, setShifts] = useState<Shift[]>([])
   const [tables, setTables] = useState<RestaurantTable[]>([])
   const [tablesState, setTablesState] = useState<OperationState<RestaurantTable[]>>({
     status: 'idle',
@@ -175,6 +282,12 @@ export function ReceptionistPage() {
   const [customers, setCustomers] = useState<Customer[]>([])
   const [customerResults, setCustomerResults] = useState<Customer[]>([])
   const [reservations, setReservations] = useState<Reservation[]>([])
+  const [selectedFinalStatusByReservationId, setSelectedFinalStatusByReservationId] = useState<
+    Record<string, ReservationStatus | ''>
+  >({})
+  const [selectedTableForReservationById, setSelectedTableForReservationById] = useState<
+    Record<string, string>
+  >({})
   const [waitlist, setWaitlist] = useState<WaitlistEntry[]>([])
   const [reservationState, setReservationState] = useState<OperationState<Reservation | null>>({
     status: 'idle',
@@ -196,7 +309,10 @@ export function ReceptionistPage() {
     message: '',
     data: null,
   })
-  const turnHint = useMemo(() => TURN_CONFIG[reservationForm.turn], [reservationForm.turn])
+  const turnHint = useMemo(
+    () => getShiftHint(shifts, reservationForm.date, reservationForm.turn),
+    [reservationForm.date, reservationForm.turn, shifts],
+  )
   const visibleTableIdentifierById = useMemo(() => {
     const sortedTables = [...tables].sort((left, right) => {
       if (left.tableNumber !== right.tableNumber) {
@@ -217,6 +333,42 @@ export function ReceptionistPage() {
     () => tables.find((table) => table.id === selectedTableId) ?? tables[0] ?? null,
     [selectedTableId, tables],
   )
+  const activeReservations = useMemo(
+    () => reservations.filter((reservation) => canEditReservation(reservation.status)),
+    [reservations],
+  )
+
+  const sortedWaitlist = useMemo(
+    () =>
+      [...waitlist].sort((left, right) => {
+        const leftPosition = left.position ?? Number.MAX_SAFE_INTEGER
+        const rightPosition = right.position ?? Number.MAX_SAFE_INTEGER
+
+        if (leftPosition !== rightPosition) {
+          return leftPosition - rightPosition
+        }
+
+        const leftCreatedAt = new Date(left.createdAt).getTime()
+        const rightCreatedAt = new Date(right.createdAt).getTime()
+
+        if (leftCreatedAt !== rightCreatedAt) {
+          return leftCreatedAt - rightCreatedAt
+        }
+
+        return left.id.localeCompare(right.id)
+      }),
+    [waitlist],
+  )
+
+  const getAssignableTables = useCallback(
+    (reservation: Reservation) =>
+      tables.filter(
+        (table) =>
+          table.capacity >= reservation.partySize &&
+          (table.availabilityStatus === 'disponible' || table.id === reservation.tableId),
+      ),
+    [tables],
+  )
 
   const resetReservationForm = useCallback(() => {
     setEditingReservationId(null)
@@ -225,6 +377,16 @@ export function ReceptionistPage() {
 
   const startReservationEdit = useCallback(
     (reservation: Reservation) => {
+      if (!canEditReservation(reservation.status)) {
+        setReservationState({
+          status: 'error',
+          message:
+            'Solo se pueden editar reservas activas. Elegi una reserva pendiente, confirmada o presentada.',
+          data: null,
+        })
+        return
+      }
+
       setEditingReservationId(reservation.id)
       setReservationForm(buildReservationFormFromItem(reservation, customers))
     },
@@ -258,22 +420,27 @@ export function ReceptionistPage() {
     }
   }, [])
 
-  const handleReservationAction = useCallback(
-    async (reservationId: string, action: 'cancel' | 'no-show') => {
+  const handleReservationSend = useCallback(
+    async (reservationId: string, status: ReservationStatus) => {
       setReservationState({
         status: 'loading',
-        message: action === 'cancel' ? 'Cancelando reserva...' : 'Marcando no-show...',
+        message: 'Enviando reserva...',
         data: null,
       })
 
       try {
-        const updatedReservation =
-          action === 'cancel' ? await cancelReservation(reservationId) : await markReservationNoShow(reservationId)
+        const updatedReservation = await updateReservationStatus(reservationId, { status })
 
         setReservationState({
           status: 'success',
-          message: action === 'cancel' ? 'Reserva cancelada.' : 'No-show registrado.',
+          message: 'Reserva finalizada y enviada a reportes.',
           data: updatedReservation,
+        })
+
+        setSelectedFinalStatusByReservationId((current) => {
+          const next = { ...current }
+          delete next[reservationId]
+          return next
         })
 
         if (editingReservationId === reservationId) {
@@ -308,6 +475,63 @@ export function ReceptionistPage() {
       setTablesState({ status: 'error', message: getApiErrorMessage(error), data: [] })
     }
   }, [])
+
+  const handleTableAvailabilityChange = useCallback(
+    async (tableId: string, availabilityStatus: TableAvailabilityStatus) => {
+      setTablesState({
+        status: 'loading',
+        message: 'Actualizando disponibilidad de la mesa...',
+        data: [],
+      })
+
+      try {
+        await updateTableAvailability(tableId, availabilityStatus)
+        await Promise.all([refreshTables(), refreshDailyData(viewDate)])
+        setTablesState({
+          status: 'success',
+          message: 'Disponibilidad de la mesa actualizada.',
+          data: [],
+        })
+      } catch (error) {
+        setTablesState({ status: 'error', message: getApiErrorMessage(error), data: [] })
+      }
+    },
+    [refreshDailyData, refreshTables, viewDate],
+  )
+
+  const handleManualTableAssign = useCallback(
+    async (reservation: Reservation) => {
+      const tableId = selectedTableForReservationById[reservation.id] ?? reservation.tableId ?? ''
+
+      if (!tableId) {
+        setReservationState({
+          status: 'error',
+          message: 'Selecciona una mesa para asignarla manualmente.',
+          data: null,
+        })
+        return
+      }
+
+      setReservationState({
+        status: 'loading',
+        message: 'Asignando mesa a la reserva...',
+        data: null,
+      })
+
+      try {
+        await assignReservationTable(reservation.id, { tableId })
+        setReservationState({
+          status: 'success',
+          message: 'Mesa asignada correctamente a la reserva.',
+          data: null,
+        })
+        await Promise.all([refreshDailyData(viewDate), refreshTables()])
+      } catch (error) {
+        setReservationState({ status: 'error', message: getApiErrorMessage(error), data: null })
+      }
+    },
+    [refreshDailyData, refreshTables, selectedTableForReservationById, viewDate],
+  )
 
   useEffect(() => {
     const loadCatalog = async () => {
@@ -355,6 +579,20 @@ export function ReceptionistPage() {
       return
     }
 
+    const shiftHint = getShiftHint(shifts, reservationForm.date, reservationForm.turn)
+    const selectedMinutes = toMinutes(reservationForm.time)
+    const minMinutes = toMinutes(shiftHint.min)
+    const maxMinutes = toMinutes(shiftHint.max)
+
+    if (!Number.isFinite(selectedMinutes) || selectedMinutes < minMinutes || selectedMinutes > maxMinutes) {
+      setReservationState({
+        status: 'error',
+        message: `La hora elegida queda fuera del horario real del turno (${shiftHint.window}). Elegi una hora dentro de esa franja.`,
+        data: null,
+      })
+      return
+    }
+
     const startsAt = toIsoFromDateAndTime(reservationForm.date, reservationForm.time)
     if (!startsAt) {
       setReservationState({ status: 'error', message: 'Ingresa fecha y hora validas.', data: null })
@@ -384,7 +622,11 @@ export function ReceptionistPage() {
 
       setReservationState({
         status: 'success',
-        message: editingReservationId ? 'Reserva actualizada correctamente.' : 'Reserva creada correctamente.',
+        message: editingReservationId
+          ? 'Reserva actualizada correctamente.'
+          : savedReservation.tableId
+          ? 'Reserva creada correctamente y mesa asignada automaticamente.'
+          : 'Reserva creada correctamente. Queda en lista de espera hasta que se libere una mesa.',
         data: savedReservation,
       })
       resetReservationForm()
@@ -395,9 +637,8 @@ export function ReceptionistPage() {
     } catch (error) {
       if (axios.isAxiosError(error) && error.response?.status === 409) {
         setReservationState({
-          status: 'success',
-          message:
-            'Sin disponibilidad para la reserva. Se mantiene la regla de lista de espera automatica por conflicto.',
+          status: 'error',
+          message: 'No se pudo completar la reserva por un conflicto de datos o disponibilidad.',
           data: null,
         })
         if (viewDate === reservationForm.date) {
@@ -406,7 +647,21 @@ export function ReceptionistPage() {
         return
       }
 
-      setReservationState({ status: 'error', message: getApiErrorMessage(error), data: null })
+      const apiMessage = getApiErrorMessage(error)
+      setReservationState({
+        status: 'error',
+        message:
+          apiMessage === 'Only active reservations can be updated'
+            ? 'Solo se pueden editar reservas activas. Si la reserva ya fue cancelada, marcada como no asistió o finalizada, no se puede guardar.'
+            : apiMessage === 'Reservation date must match shift date'
+            ? 'La fecha de la reserva no coincide con el turno seleccionado. Elegi la fecha y horario nuevamente e intenta guardar otra vez.'
+            : apiMessage === 'Reservation is outside shift hours'
+            ? 'La hora elegida queda fuera del horario real del turno. Revisala y probá de nuevo.'
+            : apiMessage === 'Reservation start is outside allowed window'
+            ? 'La hora elegida ya quedó fuera de la ventana operativa. Elegí una hora actual o futura dentro del turno.'
+            : apiMessage,
+        data: null,
+      })
     }
   }
 
@@ -484,14 +739,14 @@ export function ReceptionistPage() {
             <p className="eyebrow">Mesas</p>
             <h3>Maqueta visual del salon</h3>
           </div>
-          <span className="chip">Solo lectura</span>
+          <span className="chip">Edicion parcial</span>
         </div>
 
         <StatusMessage status={tablesState.status} message={tablesState.message} />
 
         <div className="tables-stage-meta">
           <p className="muted">Vista de referencia para consultar la distribucion y el estado actual de cada mesa.</p>
-          <p className="subtle">No permite mover, editar ni cambiar la disponibilidad desde esta pantalla.</p>
+          <p className="subtle">Desde aqui se puede marcar una mesa como ocupada o disponible.</p>
         </div>
 
         <div className="tables-status-legend" aria-label="Leyenda de estado de mesas">
@@ -520,6 +775,22 @@ export function ReceptionistPage() {
             <h3>{selectedTable.capacity} plazas</h3>
             <p className="muted">Categoria: {selectedTable.category ?? 'Normal'}</p>
             <p className="muted">Estado: {formatTableAvailabilityStatus(getTableAvailabilityStatus(selectedTable))}</p>
+            <div className="button-row">
+              <button
+                type="button"
+                className="button button-secondary"
+                onClick={() =>
+                  void handleTableAvailabilityChange(
+                    selectedTable.id,
+                    selectedTable.availabilityStatus === 'ocupada' ? 'disponible' : 'ocupada',
+                  )
+                }
+              >
+                {selectedTable.availabilityStatus === 'ocupada'
+                  ? 'Marcar disponible'
+                  : 'Marcar ocupada'}
+              </button>
+            </div>
           </div>
         ) : null}
       </article>
@@ -553,7 +824,7 @@ export function ReceptionistPage() {
           >
             <h3>Crear reserva</h3>
             <p className="form-hint">
-              Matutino usa el turno <code>breakfast</code> y vespertino usa <code>lunch</code>.
+              El turno se deriva por la hora elegida. Ventana actual: {turnHint.window}.
             </p>
 
             <label>
@@ -575,9 +846,20 @@ export function ReceptionistPage() {
                   type="date"
                   value={reservationForm.date}
                   min={TODAY}
-                  onChange={(event) =>
-                    setReservationForm({ ...reservationForm, date: event.target.value })
-                  }
+                  onChange={(event) => {
+                    const nextDate = event.target.value
+                    const suggested = getSuggestedReservationDateTime()
+                    const mustAdjustTime =
+                      nextDate === suggested.date && toMinutes(reservationForm.time) < toMinutes(suggested.time)
+                    const nextTime = mustAdjustTime ? suggested.time : reservationForm.time
+
+                    setReservationForm({
+                      ...reservationForm,
+                      date: nextDate,
+                      time: nextTime,
+                      turn: resolveTurnFromTime(nextTime),
+                    })
+                  }}
                   required
                 />
               </label>
@@ -586,13 +868,16 @@ export function ReceptionistPage() {
                 <input
                   type="time"
                   value={reservationForm.time}
+                  min={turnHint.min}
+                  max={turnHint.max}
                   onChange={(event) => {
                     const nextTime = event.target.value
+                    const nextTurn = nextTime ? resolveTurnFromTime(nextTime) : reservationForm.turn
 
                     setReservationForm({
                       ...reservationForm,
                       time: nextTime,
-                      turn: nextTime ? resolveTurnFromTime(nextTime) : reservationForm.turn,
+                      turn: nextTurn,
                     })
                   }}
                   required
@@ -603,24 +888,12 @@ export function ReceptionistPage() {
             <div className="form-grid">
               <label>
                 Turno
-                <select
-                  value={reservationForm.turn}
-                  onChange={(event) => {
-                    const nextTurn = event.target.value as ReceptionistTurn
-                    setReservationForm({
-                      ...reservationForm,
-                      turn: nextTurn,
-                      time:
-                        reservationForm.time === TURN_CONFIG[reservationForm.turn].defaultTime ||
-                        !reservationForm.time
-                          ? TURN_CONFIG[nextTurn].defaultTime
-                          : reservationForm.time,
-                    })
-                  }}
-                >
-                  <option value="matutino">Matutino</option>
-                  <option value="vespertino">Vespertino</option>
-                </select>
+                <input
+                  type="text"
+                  value={turnHint.label}
+                  readOnly
+                  aria-readonly="true"
+                />
               </label>
               <label>
                 Numero de personas
@@ -636,10 +909,6 @@ export function ReceptionistPage() {
               </label>
             </div>
 
-            <p className="form-hint">
-              Turno activo: <strong>{turnHint.label}</strong> ({turnHint.window}).
-            </p>
-
             <label>
               Solicitudes especiales
               <textarea
@@ -652,7 +921,7 @@ export function ReceptionistPage() {
             </label>
 
             {editingReservationId ? (
-              <p className="form-hint">Editando reserva {editingReservationId}</p>
+              <p className="form-hint">Editando reserva #{editingReservationId.slice(0, 8)}.</p>
             ) : null}
 
             <div className="button-row">
@@ -675,12 +944,12 @@ export function ReceptionistPage() {
             </div>
 
             <p className="form-hint">
-              Visualizacion de entradas generadas automaticamente por conflictos de disponibilidad (409).
+              Las reservas sin mesa quedan en espera y se asignan automaticamente cuando se libera una mesa.
             </p>
 
             <div className="history-list receptionist-scroll-list receptionist-waitlist-list receptionist-waitlist-scroll">
-              {waitlist.length ? (
-                waitlist.map((entry) => (
+              {sortedWaitlist.length ? (
+                sortedWaitlist.map((entry) => (
                   <article key={entry.id} className="history-item">
                     <div>
                       <strong>{entry.customer?.fullName ?? 'Cliente sin cargar'}</strong>
@@ -717,54 +986,122 @@ export function ReceptionistPage() {
             </label>
 
             <div className="history-list receptionist-scroll-list receptionist-future-reservations-list receptionist-upcoming-scroll">
-              {reservations.length ? (
-                reservations.map((reservation) => (
-                  <article key={reservation.id} className="history-item receptionist-reservation-item">
-                    <div>
-                      <strong>{reservation.customer?.fullName ?? 'Cliente sin cargar'}</strong>
-                      <p>
-                        {formatDateTime(reservation.startsAt)} ·{' '}
-                        {formatShiftLabel(reservation.shift?.shiftName)} · {reservation.partySize}{' '}
-                        personas
-                      </p>
-                      <p className="subtle">
-                        Mesa {reservation.table?.tableNumber ? `M${reservation.table.tableNumber}` : '—'} ·{' '}
-                        {formatReservationStatus(reservation.status)}
-                      </p>
-                    </div>
-                    <div className="history-item-actions">
-                      <button
-                        type="button"
-                        className="button button-secondary button-icon button-icon-edit"
-                        onClick={() => startReservationEdit(reservation)}
-                        aria-label="Editar reserva"
-                        title="Editar reserva"
-                      >
-                        <img className="button-icon-image" src={editIcon} alt="" aria-hidden="true" />
-                      </button>
-                      <button
-                        type="button"
-                        className="button button-ghost button-icon button-icon-delete"
-                        onClick={() => void handleReservationAction(reservation.id, 'cancel')}
-                        aria-label="Cancelar reserva"
-                        title="Cancelar reserva"
-                      >
-                        <img className="button-icon-image" src={deleteIcon} alt="" aria-hidden="true" />
-                      </button>
-                      <button
-                        type="button"
-                        className="button button-secondary button-icon button-icon-no-show"
-                        onClick={() => void handleReservationAction(reservation.id, 'no-show')}
-                        aria-label="Registrar no-show"
-                        title="Registrar no-show"
-                      >
-                        <img className="button-icon-image" src={availabilityIcon} alt="" aria-hidden="true" />
-                      </button>
-                    </div>
-                  </article>
-                ))
+              {activeReservations.length ? (
+                activeReservations.map((reservation) => {
+                  const selectedFinalStatus = selectedFinalStatusByReservationId[reservation.id] ?? ''
+                  const assignableTables = getAssignableTables(reservation)
+                  const selectedAssignableTableId =
+                    selectedTableForReservationById[reservation.id] ??
+                    reservation.tableId ??
+                    assignableTables[0]?.id ??
+                    ''
+
+                  return (
+                    <article key={reservation.id} className="history-item receptionist-reservation-item">
+                      <div>
+                        <strong>{reservation.customer?.fullName ?? 'Cliente sin cargar'}</strong>
+                        <p>
+                          {formatDateTime(reservation.startsAt)} ·{' '}
+                          {formatShiftLabel(reservation.shift?.shiftName)} · {reservation.partySize}{' '}
+                          personas
+                        </p>
+                        <p className="subtle">
+                          Mesa {reservation.table?.tableNumber ? `M${reservation.table.tableNumber}` : '—'} ·{' '}
+                          {formatReservationStatus(reservation.status)}
+                        </p>
+                      </div>
+                      <div className="history-item-actions">
+                        <button
+                          type="button"
+                          className="button button-secondary button-icon button-icon-edit"
+                          onClick={() => startReservationEdit(reservation)}
+                          aria-label="Editar reserva"
+                          title={
+                            canEditReservation(reservation.status)
+                              ? 'Editar reserva'
+                              : 'Solo se pueden editar reservas activas'
+                          }
+                        >
+                          <img className="button-icon-image" src={editIcon} alt="" aria-hidden="true" />
+                        </button>
+                        <label className="reservation-status-control">
+                          Estado
+                          <select
+                            value={selectedFinalStatus}
+                            onChange={(event) => {
+                              const nextStatus = event.target.value as ReservationStatus
+
+                              setSelectedFinalStatusByReservationId((current) => ({
+                                ...current,
+                                [reservation.id]: nextStatus,
+                              }))
+                            }}
+                          >
+                            <option value="" disabled>
+                              Seleccionar estado final
+                            </option>
+                            {FINAL_RESERVATION_STATUS_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="reservation-status-control">
+                          Mesa
+                          <select
+                            value={selectedAssignableTableId}
+                            onChange={(event) =>
+                              setSelectedTableForReservationById((current) => ({
+                                ...current,
+                                [reservation.id]: event.target.value,
+                              }))
+                            }
+                          >
+                            {assignableTables.length ? null : (
+                              <option value="" disabled>
+                                Sin mesas disponibles
+                              </option>
+                            )}
+                            {assignableTables.map((table) => (
+                              <option key={table.id} value={table.id}>
+                                {formatTableIdentifier(table.tableNumber)} · {table.capacity} plazas ·{' '}
+                                {formatTableAvailabilityStatus(getTableAvailabilityStatus(table))}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <button
+                          type="button"
+                          className="button button-secondary"
+                          onClick={() => void handleManualTableAssign(reservation)}
+                          disabled={!selectedAssignableTableId}
+                          title="Asignar mesa manualmente"
+                        >
+                          Asignar mesa
+                        </button>
+                        <button
+                          type="button"
+                          className="button button-ghost button-icon button-icon-send"
+                          onClick={() => {
+                            if (!selectedFinalStatus) {
+                              return
+                            }
+
+                            void handleReservationSend(reservation.id, selectedFinalStatus)
+                          }}
+                          disabled={!selectedFinalStatus}
+                          aria-label="Enviar reserva"
+                          title="Enviar reserva"
+                        >
+                          <img className="button-icon-image" src={sendIcon} alt="" aria-hidden="true" />
+                        </button>
+                      </div>
+                    </article>
+                  )
+                })
               ) : (
-                <p className="muted">No hay reservas cargadas para este dia.</p>
+                <p className="muted">No hay reservas activas para este dia.</p>
               )}
             </div>
           </article>

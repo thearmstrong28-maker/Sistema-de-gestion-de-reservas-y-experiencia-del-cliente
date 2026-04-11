@@ -67,6 +67,7 @@ export class WaitlistService {
       order: {
         position: 'ASC',
         createdAt: 'ASC',
+        id: 'ASC',
       },
     });
   }

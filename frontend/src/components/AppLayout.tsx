@@ -55,25 +55,21 @@ export function AppLayout() {
         </div>
 
         <div className="session-actions">
-          {isRegisterPage || isLoginPage ? (
-            <Link className="button button-ghost" to="/">
-              Inicio
-            </Link>
-          ) : isAdminPage ? (
-            <>
-              {profile ? (
-                <div className="session-card">
-                  <span>{restaurantName}</span>
-                  <small>{formatUserRole(profile.role)}</small>
-                </div>
-              ) : null}
-              {token ? (
-                <button type="button" className="button button-ghost" onClick={clearSession}>
-                  Cerrar sesión
-                </button>
-              ) : null}
-            </>
-          ) : null}
+        {!isRegisterPage && !isLoginPage ? (
+          <>
+            {profile ? (
+              <div className="session-card">
+                <span>{restaurantName}</span>
+                <small>{formatUserRole(profile.role)}</small>
+              </div>
+            ) : null}
+            {token ? (
+              <button type="button" className="button button-ghost" onClick={clearSession}>
+                Cerrar sesión
+              </button>
+            ) : null}
+          </>
+        ) : null}
         </div>
       </header>
 

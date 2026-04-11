@@ -4,14 +4,26 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, In, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { Role } from '../auth/enums/role.enum';
 import { ReservationEntity } from '../reservations/entities/reservation.entity';
 import { RestaurantTableEntity } from '../reservations/entities/table.entity';
 import { TableCategory } from '../reservations/enums/table-category.enum';
 import { TableAvailabilityStatus } from '../reservations/enums/table-availability-status.enum';
+import {
+  ACTIVE_RESERVATION_STATUSES,
+  ReservationStatus,
+} from '../reservations/enums/reservation-status.enum';
+import {
+  buildShiftName,
+  type ShiftSlot,
+  SHIFT_SLOT_WINDOWS,
+} from '../shifts/shift-slot';
+import { ShiftEntity } from '../shifts/entities/shift.entity';
 import { UserEntity } from '../auth/entities/user.entity';
+import { WaitlistEntryEntity } from '../waitlist/entities/waitlist-entry.entity';
+import { ACTIVE_WAITLIST_STATUSES } from '../waitlist/enums/waitlist-status.enum';
 import { CreateTablesBulkDto } from './dto/create-tables-bulk.dto';
 import {
   CreateTablesDistributionDto,
@@ -96,16 +108,33 @@ export class EstablishmentService {
     id: string,
     payload: UpdateTableAvailabilityDto,
   ): Promise<RestaurantTableEntity> {
-    const table = await this.tableRepository.findOne({
-      where: { id, isActive: true },
+    return this.dataSource.transaction(async (manager) => {
+      const tableRepository = manager.getRepository(RestaurantTableEntity);
+      const table = await tableRepository
+        .createQueryBuilder('table')
+        .setLock('pessimistic_write')
+        .where('table.id = :id', { id })
+        .andWhere('table.isActive = true')
+        .getOne();
+
+      if (!table) {
+        throw new NotFoundException('La mesa no existe');
+      }
+
+      table.availabilityStatus = payload.availabilityStatus;
+
+      if (payload.availabilityStatus === TableAvailabilityStatus.Disponible) {
+        const promoted = await this.promoteWaitlistEntryIfEligible(
+          manager,
+          table,
+        );
+        if (promoted) {
+          table.availabilityStatus = TableAvailabilityStatus.Ocupada;
+        }
+      }
+
+      return tableRepository.save(table);
     });
-
-    if (!table) {
-      throw new NotFoundException('La mesa no existe');
-    }
-
-    table.availabilityStatus = payload.availabilityStatus;
-    return this.tableRepository.save(table);
   }
 
   async updateTable(
@@ -267,5 +296,130 @@ export class EstablishmentService {
 
       coordinates.add(coordinateKey);
     }
+  }
+
+  private async promoteWaitlistEntryIfEligible(
+    manager: EntityManager,
+    table: RestaurantTableEntity,
+  ): Promise<boolean> {
+    const now = new Date();
+    const currentSlot = this.resolveCurrentSlot(now);
+
+    if (!currentSlot) {
+      return false;
+    }
+
+    const reservationDate = now.toISOString().slice(0, 10);
+    const shiftName = buildShiftName(reservationDate, currentSlot);
+    const shiftRepository = manager.getRepository(ShiftEntity);
+    const shift = await shiftRepository.findOne({
+      where: { shiftName, isActive: true },
+    });
+
+    if (!shift) {
+      return false;
+    }
+
+    const shiftStart = this.toUtcDate(reservationDate, shift.startsAt);
+    const shiftEnd = this.toUtcDate(reservationDate, shift.endsAt);
+    const startsAt = now > shiftStart ? now : shiftStart;
+    const defaultDurationMinutes = 90;
+    const endsAt = new Date(
+      Math.min(
+        shiftEnd.getTime(),
+        startsAt.getTime() + defaultDurationMinutes * 60_000,
+      ),
+    );
+
+    if (endsAt <= startsAt) {
+      return false;
+    }
+
+    const waitlistRepository = manager.getRepository(WaitlistEntryEntity);
+    const reservationRepository = manager.getRepository(ReservationEntity);
+
+    const candidates = await waitlistRepository
+      .createQueryBuilder('waitlist')
+      .setLock('pessimistic_write')
+      .where('waitlist.requestedDate = :reservationDate', { reservationDate })
+      .andWhere('waitlist.requestedShiftId = :shiftId', { shiftId: shift.id })
+      .andWhere('waitlist.partySize <= :tableCapacity', {
+        tableCapacity: table.capacity,
+      })
+      .andWhere('waitlist.status IN (:...statuses)', {
+        statuses: ACTIVE_WAITLIST_STATUSES,
+      })
+      .orderBy('waitlist.position', 'ASC', 'NULLS LAST')
+      .addOrderBy('waitlist.createdAt', 'ASC')
+      .addOrderBy('waitlist.id', 'ASC')
+      .getMany();
+
+    for (const candidate of candidates) {
+      const existingReservation = await reservationRepository.findOne({
+        where: {
+          customerId: candidate.customerId,
+          shiftId: shift.id,
+          reservationDate,
+          status: In(ACTIVE_RESERVATION_STATUSES),
+        },
+      });
+
+      if (
+        existingReservation &&
+        existingReservation.tableId &&
+        existingReservation.tableId !== table.id
+      ) {
+        continue;
+      }
+
+      if (existingReservation) {
+        existingReservation.tableId = table.id;
+        await reservationRepository.save(existingReservation);
+      } else {
+        const createdReservation = reservationRepository.create({
+          customerId: candidate.customerId,
+          tableId: table.id,
+          shiftId: shift.id,
+          reservationDate,
+          startsAt,
+          endsAt,
+          partySize: candidate.partySize,
+          status: ReservationStatus.Confirmed,
+          notes: candidate.notes ?? null,
+          specialRequests: null,
+          createdByUserId: null,
+        });
+        await reservationRepository.save(createdReservation);
+      }
+
+      await waitlistRepository.delete(candidate.id);
+      return true;
+    }
+
+    return false;
+  }
+
+  private resolveCurrentSlot(now: Date): ShiftSlot | null {
+    const currentTime = now.toISOString().slice(11, 19);
+
+    if (
+      currentTime >= SHIFT_SLOT_WINDOWS.matutino.startsAt &&
+      currentTime < SHIFT_SLOT_WINDOWS.matutino.endsAt
+    ) {
+      return 'matutino';
+    }
+
+    if (
+      currentTime >= SHIFT_SLOT_WINDOWS.vespertino.startsAt &&
+      currentTime < SHIFT_SLOT_WINDOWS.vespertino.endsAt
+    ) {
+      return 'vespertino';
+    }
+
+    return null;
+  }
+
+  private toUtcDate(date: string, time: string): Date {
+    return new Date(`${date}T${time}Z`);
   }
 }

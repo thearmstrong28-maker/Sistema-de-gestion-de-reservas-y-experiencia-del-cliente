@@ -450,10 +450,7 @@ export function AdministrationPage() {
     status: 'idle',
     message: '',
   })
-  const [selectedReport, setSelectedReport] = useState<'summary' | 'frequent'>('summary')
   const tablesStageRef = useRef<HTMLDivElement | null>(null)
-  const summaryReportRef = useRef<HTMLArticleElement | null>(null)
-  const frequentReportRef = useRef<HTMLArticleElement | null>(null)
 
   const restaurantName = useMemo(
     () =>
@@ -1266,34 +1263,6 @@ export function AdministrationPage() {
 
   const maxComparisonValue = Math.max(1, ...comparisonState.data.map((row) => row.reservationsCount))
 
-  const scrollToReportSection = useCallback((section: 'summary' | 'frequent') => {
-    setSelectedReport(section)
-    const target = section === 'summary' ? summaryReportRef.current : frequentReportRef.current
-
-    target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }, [])
-
-  const reportOverviewCards = [
-    {
-      id: 'summary' as const,
-      label: 'Resumen y comparativo',
-      value: dailySummaryState.data?.reservationsCount ?? 0,
-      description: `${dailySummaryState.data?.attendedCount ?? 0} asistencias · ${dailySummaryState.data?.noShowCount ?? 0} sin asistencia`,
-      actionLabel: 'Ver resumen',
-      onClick: () => scrollToReportSection('summary'),
-      primary: true,
-    },
-    {
-      id: 'frequent' as const,
-      label: 'Clientes frecuentes',
-      value: frequentState.data.length,
-      description: 'Clientes con mayor recurrencia y seguimiento de ausencias.',
-      actionLabel: 'Ver listado',
-      onClick: () => scrollToReportSection('frequent'),
-      primary: false,
-    },
-  ]
-
   if (!adminAccessState.unlocked) {
     return (
       <section className="page-stack establishment-page fade-in">
@@ -1910,35 +1879,6 @@ export function AdministrationPage() {
 
       {activeTab === 'reportes' ? (
         <div className="stacked-panels">
-          <div className="reports-overview-grid">
-            {reportOverviewCards.map((card) => (
-              <article
-                key={card.id}
-                className={`panel report-summary-card ${selectedReport === card.id ? 'report-summary-card-active' : ''}`}
-              >
-                <h3>{card.label}</h3>
-                <p className="subtle">{card.description}</p>
-                <div className="report-summary-meta">
-                  <span>
-                    <strong>{card.value}</strong> registros
-                  </span>
-                  <span>
-                    {card.id === 'summary'
-                      ? 'Incluye el resumen diario y el comparativo de los últimos días.'
-                      : 'Incluye el listado de clientes con mayor actividad.'}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  className={`button ${card.primary ? 'button-primary' : 'button-secondary'} button-tight`}
-                  onClick={card.onClick}
-                >
-                  {card.actionLabel}
-                </button>
-              </article>
-            ))}
-          </div>
-
           <article className="panel form-panel">
             <div className="panel-heading">
               <div>
@@ -2012,7 +1952,7 @@ export function AdministrationPage() {
             ))}
           </div>
 
-          <article ref={summaryReportRef} className="panel report-panel">
+          <article className="panel report-panel">
             <div className="panel-heading">
               <div>
                 <p className="eyebrow">Reportes</p>
@@ -2078,7 +2018,7 @@ export function AdministrationPage() {
             </div>
           </article>
 
-          <article ref={frequentReportRef} className="panel report-panel">
+          <article className="panel report-panel">
             <div className="panel-heading">
               <div>
                 <p className="eyebrow">Reportes</p>

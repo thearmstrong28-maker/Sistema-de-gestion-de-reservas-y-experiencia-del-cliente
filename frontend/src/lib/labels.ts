@@ -7,11 +7,11 @@ export const formatReservationStatus = (status: ReservationStatus): string => {
     case 'CONFIRMED':
       return 'Confirmada'
     case 'CANCELLED':
-      return 'Cancelada'
+      return 'Cancelada por cliente'
     case 'NO_SHOW':
-      return 'Sin asistencia'
+      return 'No asistió'
     case 'SEATED':
-      return 'En mesa'
+      return 'Se presentó'
     case 'COMPLETED':
       return 'Finalizada'
   }

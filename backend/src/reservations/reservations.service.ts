@@ -21,6 +21,7 @@ import {
   SHIFT_SLOT_WINDOWS,
   type ShiftSlot,
 } from '../shifts/shift-slot';
+import { WaitlistEntryEntity } from '../waitlist/entities/waitlist-entry.entity';
 import { AssignTableDto } from './dto/assign-table.dto';
 import { CheckAvailabilityDto } from './dto/check-availability.dto';
 import { CreateReservationDto } from './dto/create-reservation.dto';
@@ -45,6 +46,8 @@ export class ReservationsService {
     private readonly shiftRepository: Repository<ShiftEntity>,
     @InjectRepository(CustomerEntity)
     private readonly customerRepository: Repository<CustomerEntity>,
+    @InjectRepository(WaitlistEntryEntity)
+    private readonly waitlistRepository: Repository<WaitlistEntryEntity>,
     private readonly configService: ConfigService,
   ) {}
 
@@ -86,7 +89,8 @@ export class ReservationsService {
       startsAt,
       endsAt,
       preferredTableId: createReservationDto.tableId,
-      allowFallbackWhenPreferredUnavailable: false,
+      allowFallbackWhenPreferredUnavailable: true,
+      returnNullWhenNoTableAvailable: true,
     });
 
     const reservation = this.reservationRepository.create({
@@ -103,7 +107,28 @@ export class ReservationsService {
       createdByUserId,
     });
 
-    return this.saveReservation(reservation);
+    const savedReservation = await this.saveReservation(reservation);
+    const waitlistEntry = await this.waitlistRepository.save(
+      this.waitlistRepository.create({
+        customerId: createReservationDto.customerId,
+        requestedShiftId: shift.id,
+        requestedDate: reservationDate,
+        partySize: createReservationDto.partySize,
+        notes:
+          createReservationDto.notes ??
+          createReservationDto.specialRequests ??
+          null,
+      }),
+    );
+
+    if (table) {
+      savedReservation.tableId = table.id;
+      await this.saveReservationAndSyncTables(savedReservation, [table.id]);
+      await this.waitlistRepository.delete(waitlistEntry.id);
+      return savedReservation;
+    }
+
+    return savedReservation;
   }
 
   async list(query: ListReservationsQueryDto): Promise<ReservationEntity[]> {
@@ -142,7 +167,9 @@ export class ReservationsService {
     }
 
     const shift = await this.resolveShift(
-      updateReservationDto.shiftId ?? reservation.shiftId,
+      updateReservationDto.turno
+        ? updateReservationDto.shiftId
+        : (updateReservationDto.shiftId ?? reservation.shiftId),
       updateReservationDto.turno,
       updateReservationDto.startsAt ?? reservation.startsAt,
     );
@@ -175,6 +202,8 @@ export class ReservationsService {
       reservation.id,
     );
 
+    const previousTableId = reservation.tableId;
+
     const table = await this.resolveTableAssignment({
       shiftId: shift.id,
       partySize: updateReservationDto.partySize ?? reservation.partySize,
@@ -202,21 +231,40 @@ export class ReservationsService {
       updateReservationDto.specialRequests ?? reservation.specialRequests;
     reservation.notes = updateReservationDto.notes ?? reservation.notes;
 
-    return this.saveReservation(reservation);
+    return this.saveReservationAndSyncTables(reservation, [
+      previousTableId,
+      reservation.tableId,
+    ]);
   }
 
   async cancel(id: string): Promise<ReservationEntity> {
     const reservation = await this.getReservationOrThrow(id);
     this.assertReservationIsActiveForStatusChange(reservation);
     reservation.status = ReservationStatus.Cancelled;
-    return this.saveReservation(reservation);
+    return this.saveReservationAndSyncTables(reservation, [
+      reservation.tableId,
+    ]);
   }
 
   async markNoShow(id: string): Promise<ReservationEntity> {
     const reservation = await this.getReservationOrThrow(id);
     this.assertReservationIsActiveForStatusChange(reservation);
     reservation.status = ReservationStatus.NoShow;
-    return this.saveReservation(reservation);
+    return this.saveReservationAndSyncTables(reservation, [
+      reservation.tableId,
+    ]);
+  }
+
+  async updateStatus(
+    id: string,
+    status: ReservationStatus,
+  ): Promise<ReservationEntity> {
+    const reservation = await this.getReservationOrThrow(id);
+    this.assertReservationIsActiveForStatusChange(reservation);
+    reservation.status = status;
+    return this.saveReservationAndSyncTables(reservation, [
+      reservation.tableId,
+    ]);
   }
 
   async assignTable(
@@ -227,6 +275,8 @@ export class ReservationsService {
     if (!ACTIVE_RESERVATION_STATUSES.includes(reservation.status)) {
       throw new BadRequestException('Only active reservations can be assigned');
     }
+
+    const previousTableId = reservation.tableId;
 
     const table = await this.resolveTableAssignment({
       shiftId: reservation.shiftId,
@@ -239,7 +289,10 @@ export class ReservationsService {
     });
 
     reservation.tableId = table?.id ?? null;
-    return this.saveReservation(reservation);
+    return this.saveReservationAndSyncTables(reservation, [
+      previousTableId,
+      reservation.tableId,
+    ]);
   }
 
   async getAvailability(query: CheckAvailabilityDto): Promise<{
@@ -280,7 +333,6 @@ export class ReservationsService {
     const tables = await this.tableRepository.find({
       where: {
         isActive: true,
-        availabilityStatus: TableAvailabilityStatus.Disponible,
         capacity: MoreThan(query.partySize - 1),
       },
       order: { capacity: 'ASC', tableNumber: 'ASC', id: 'ASC' },
@@ -403,17 +455,13 @@ export class ReservationsService {
   private validateReservationWindow(startsAt: Date): void {
     const now = new Date();
     const maxDaysAhead = this.getNumberConfig('RESERVATION_MAX_DAYS_AHEAD', 30);
-    const toleranceMinutes = this.getNumberConfig(
-      'RESERVATION_ARRIVAL_TOLERANCE_MINUTES',
-      15,
-    );
-
-    const earliestAllowed = new Date(now.getTime() - toleranceMinutes * 60_000);
+    const reservationDate = startsAt.toISOString().slice(0, 10);
+    const today = now.toISOString().slice(0, 10);
     const latestAllowed = new Date(
       now.getTime() + maxDaysAhead * 24 * 60 * 60_000,
     );
 
-    if (startsAt < earliestAllowed) {
+    if (reservationDate < today) {
       throw new BadRequestException(
         'Reservation start is outside allowed window',
       );
@@ -453,6 +501,7 @@ export class ReservationsService {
     preferredTableId,
     allowFallbackWhenPreferredUnavailable,
     reservationIdToExclude,
+    returnNullWhenNoTableAvailable = false,
   }: {
     shiftId: string;
     partySize: number;
@@ -461,6 +510,7 @@ export class ReservationsService {
     preferredTableId?: string;
     allowFallbackWhenPreferredUnavailable: boolean;
     reservationIdToExclude?: string;
+    returnNullWhenNoTableAvailable?: boolean;
   }): Promise<RestaurantTableEntity | null> {
     if (preferredTableId) {
       const preferred = await this.tableRepository.findOne({
@@ -468,12 +518,6 @@ export class ReservationsService {
       });
       if (!preferred) {
         throw new NotFoundException('Requested table not found or inactive');
-      }
-
-      if (preferred.availabilityStatus === TableAvailabilityStatus.Ocupada) {
-        throw new ConflictException(
-          'Requested table is not available for this slot',
-        );
       }
 
       const preferredIsValid =
@@ -500,7 +544,6 @@ export class ReservationsService {
     const candidates = await this.tableRepository.find({
       where: {
         isActive: true,
-        availabilityStatus: TableAvailabilityStatus.Disponible,
         capacity: MoreThan(partySize - 1),
       },
       order: {
@@ -521,6 +564,10 @@ export class ReservationsService {
       if (!occupied) {
         return table;
       }
+    }
+
+    if (returnNullWhenNoTableAvailable) {
+      return null;
     }
 
     throw new ConflictException(
@@ -594,7 +641,7 @@ export class ReservationsService {
   ): void {
     if (!ACTIVE_RESERVATION_STATUSES.includes(reservation.status)) {
       throw new BadRequestException(
-        'Only active reservations can change to cancelled/no-show',
+        'Only active reservations can change status',
       );
     }
   }
@@ -635,6 +682,50 @@ export class ReservationsService {
       }
 
       throw error;
+    }
+  }
+
+  private async saveReservationAndSyncTables(
+    reservation: ReservationEntity,
+    tableIdsToSync: Array<string | null | undefined>,
+  ): Promise<ReservationEntity> {
+    const saved = await this.saveReservation(reservation);
+    await this.syncTableAvailability(tableIdsToSync);
+    return saved;
+  }
+
+  private async syncTableAvailability(
+    tableIdsToSync: Array<string | null | undefined>,
+  ): Promise<void> {
+    const uniqueTableIds = [...new Set(tableIdsToSync)].filter(
+      (tableId): tableId is string => Boolean(tableId),
+    );
+
+    for (const tableId of uniqueTableIds) {
+      const table = await this.tableRepository.findOne({
+        where: { id: tableId, isActive: true },
+      });
+
+      if (!table) {
+        continue;
+      }
+
+      const activeReservationCount = await this.reservationRepository.count({
+        where: {
+          tableId,
+          status: In(ACTIVE_RESERVATION_STATUSES),
+        },
+      });
+
+      const nextStatus =
+        activeReservationCount > 0
+          ? TableAvailabilityStatus.Ocupada
+          : TableAvailabilityStatus.Disponible;
+
+      if (table.availabilityStatus !== nextStatus) {
+        table.availabilityStatus = nextStatus;
+        await this.tableRepository.save(table);
+      }
     }
   }
 

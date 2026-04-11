@@ -47,6 +47,7 @@ export class EstablishmentController {
     return this.establishmentService.createTablesDistribution(payload);
   }
 
+  @Roles(Role.Admin, Role.Host)
   @Patch('tables/:id/availability')
   updateTableAvailability(
     @Param('id') id: string,

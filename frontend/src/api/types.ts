@@ -300,6 +300,10 @@ export interface UpdateReservationRequest {
   notes?: string
 }
 
+export interface UpdateReservationStatusRequest {
+  status: ReservationStatus
+}
+
 export interface ListReservationsQuery {
   date?: string
   shiftId?: string

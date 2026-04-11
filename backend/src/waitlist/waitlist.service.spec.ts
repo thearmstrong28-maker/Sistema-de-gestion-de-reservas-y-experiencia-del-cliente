@@ -91,7 +91,7 @@ describe('WaitlistService', () => {
     expect(waitlistRepository.find).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { requestedDate: '2026-04-06', requestedShiftId: 'shift-1' },
-        order: { position: 'ASC', createdAt: 'ASC' },
+        order: { position: 'ASC', createdAt: 'ASC', id: 'ASC' },
       }),
     );
   });

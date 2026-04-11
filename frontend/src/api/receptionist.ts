@@ -1,5 +1,6 @@
 import { api } from './http'
 import type {
+  AssignTableRequest,
   AvailabilityResponse,
   CheckAvailabilityRequest,
   CreateCustomerRequest,
@@ -9,9 +10,11 @@ import type {
   ListReservationsQuery,
   ListWaitlistQuery,
   Reservation,
-  Shift,
   RestaurantTable,
+  Shift,
+  TableAvailabilityStatus,
   UpdateReservationRequest,
+  UpdateReservationStatusRequest,
   WaitlistEntry,
 } from './types'
 
@@ -34,6 +37,22 @@ export const updateReservation = async (
   payload: UpdateReservationRequest,
 ): Promise<Reservation> => {
   const { data } = await api.patch<Reservation>(`/reservations/${id}`, payload)
+  return data
+}
+
+export const updateReservationStatus = async (
+  id: string,
+  payload: UpdateReservationStatusRequest,
+): Promise<Reservation> => {
+  const { data } = await api.patch<Reservation>(`/reservations/${id}/status`, payload)
+  return data
+}
+
+export const assignReservationTable = async (
+  id: string,
+  payload: AssignTableRequest,
+): Promise<Reservation> => {
+  const { data } = await api.patch<Reservation>(`/reservations/${id}/assign-table`, payload)
   return data
 }
 
@@ -70,6 +89,16 @@ export const listShifts = async (): Promise<Shift[]> => {
 
 export const listTablesLayout = async (): Promise<RestaurantTable[]> => {
   const { data } = await api.get<RestaurantTable[]>('/reservations/tables')
+  return data
+}
+
+export const updateTableAvailability = async (
+  id: string,
+  availabilityStatus: TableAvailabilityStatus,
+): Promise<RestaurantTable> => {
+  const { data } = await api.patch<RestaurantTable>(`/establishment/tables/${id}/availability`, {
+    availabilityStatus,
+  })
   return data
 }
 
