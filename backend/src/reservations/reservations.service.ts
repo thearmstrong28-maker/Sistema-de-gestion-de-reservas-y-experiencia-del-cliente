@@ -25,6 +25,7 @@ import {
   type ShiftSlot,
 } from '../shifts/shift-slot';
 import { WaitlistEntryEntity } from '../waitlist/entities/waitlist-entry.entity';
+import { WaitlistStatus } from '../waitlist/enums/waitlist-status.enum';
 import { AssignTableDto } from './dto/assign-table.dto';
 import { CheckAvailabilityDto } from './dto/check-availability.dto';
 import { CreateReservationDto } from './dto/create-reservation.dto';
@@ -106,7 +107,7 @@ export class ReservationsService {
       partySize: createReservationDto.partySize,
       specialRequests: createReservationDto.specialRequests,
       notes: createReservationDto.notes,
-      status: ReservationStatus.Pending,
+      status: table ? ReservationStatus.Confirmed : ReservationStatus.Pending,
       createdByUserId,
     });
 
@@ -127,7 +128,8 @@ export class ReservationsService {
     if (table) {
       savedReservation.tableId = table.id;
       await this.saveReservationAndSyncTables(savedReservation, [table.id]);
-      await this.waitlistRepository.delete(waitlistEntry.id);
+      waitlistEntry.status = WaitlistStatus.Accepted;
+      await this.waitlistRepository.save(waitlistEntry);
       return savedReservation;
     }
 
@@ -240,9 +242,10 @@ export class ReservationsService {
     ]);
   }
 
-  async cancel(id: string): Promise<ReservationEntity> {
+  async cancel(id: string, reason?: string): Promise<ReservationEntity> {
     const reservation = await this.getReservationOrThrow(id);
     this.assertReservationIsActiveForStatusChange(reservation);
+    reservation.cancellationReason = this.normalizeCancellationReason(reason);
     reservation.status = ReservationStatus.Cancelled;
     return this.saveReservationAndSyncTables(reservation, [
       reservation.tableId,
@@ -252,6 +255,7 @@ export class ReservationsService {
   async markNoShow(id: string): Promise<ReservationEntity> {
     const reservation = await this.getReservationOrThrow(id);
     this.assertReservationIsActiveForStatusChange(reservation);
+    this.assertNoShowGracePeriodElapsed(reservation);
     reservation.status = ReservationStatus.NoShow;
     return this.saveReservationAndSyncTables(reservation, [
       reservation.tableId,
@@ -482,6 +486,22 @@ export class ReservationsService {
     }
   }
 
+  private assertNoShowGracePeriodElapsed(reservation: ReservationEntity): void {
+    const graceMinutes = this.getNumberConfig(
+      'RESERVATION_NO_SHOW_GRACE_MINUTES',
+      15,
+    );
+    const eligibleAt = new Date(
+      reservation.startsAt.getTime() + graceMinutes * 60_000,
+    );
+
+    if (new Date() < eligibleAt) {
+      throw new BadRequestException(
+        `La ausencia solo se puede marcar luego de ${graceMinutes} minutos de gracia`,
+      );
+    }
+  }
+
   private validateReservationAgainstShift(
     shift: ShiftEntity,
     startsAt: Date,
@@ -699,6 +719,12 @@ export class ReservationsService {
 
       throw error;
     }
+  }
+
+  private normalizeCancellationReason(reason?: string): string {
+    const normalizedReason = reason?.trim();
+
+    return normalizedReason ? normalizedReason : 'Sin motivo especificado';
   }
 
   private async saveReservationAndSyncTables(

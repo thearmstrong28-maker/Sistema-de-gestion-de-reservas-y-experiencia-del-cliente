@@ -16,6 +16,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import type { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { CreateReservationDto } from './dto/create-reservation.dto';
+import { CancelReservationDto } from './dto/cancel-reservation.dto';
 import { CheckAvailabilityDto } from './dto/check-availability.dto';
 import { UpdateReservationStatusDto } from './dto/update-reservation-status.dto';
 import { UpdateReservationDto } from './dto/update-reservation.dto';
@@ -63,8 +64,11 @@ export class ReservationsController {
 
   @Roles(Role.Admin, Role.Host)
   @Patch(':id/cancel')
-  cancel(@Param('id') id: string) {
-    return this.reservationsService.cancel(id);
+  cancel(
+    @Param('id') id: string,
+    @Body() cancelReservationDto: CancelReservationDto,
+  ) {
+    return this.reservationsService.cancel(id, cancelReservationDto?.reason);
   }
 
   @Roles(Role.Admin, Role.Host)

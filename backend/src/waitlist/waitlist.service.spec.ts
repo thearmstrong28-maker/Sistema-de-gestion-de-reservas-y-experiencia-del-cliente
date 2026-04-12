@@ -101,15 +101,17 @@ describe('WaitlistService', () => {
 
     expect(result).toBe(existingEntry);
     expect(waitlistRepository.save).not.toHaveBeenCalled();
-    expect(waitlistRepository.findOne).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          customerId: 'customer-1',
-          requestedShiftId: 'shift-1',
-          requestedDate: '2026-04-06',
-        }),
-      }),
-    );
+    const firstFindOneCall = waitlistRepository.findOne as {
+      mock: { calls: Array<[unknown]> };
+    };
+
+    expect(firstFindOneCall.mock.calls[0][0]).toMatchObject({
+      where: {
+        customerId: 'customer-1',
+        requestedShiftId: 'shift-1',
+        requestedDate: '2026-04-06',
+      },
+    });
   });
 
   it('returns the existing waiting entry when a unique constraint race happens on save', async () => {
@@ -138,16 +140,17 @@ describe('WaitlistService', () => {
 
     expect(result).toBe(existingEntry);
     expect(waitlistRepository.save).toHaveBeenCalledTimes(1);
-    expect(waitlistRepository.findOne).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        where: expect.objectContaining({
-          customerId: 'customer-1',
-          requestedShiftId: 'shift-1',
-          requestedDate: '2026-04-06',
-        }),
-      }),
-    );
+    const secondFindOneCall = waitlistRepository.findOne as {
+      mock: { calls: Array<[unknown]> };
+    };
+
+    expect(secondFindOneCall.mock.calls[1][0]).toMatchObject({
+      where: {
+        customerId: 'customer-1',
+        requestedShiftId: 'shift-1',
+        requestedDate: '2026-04-06',
+      },
+    });
   });
 
   it('lists waitlist entries ordered by position then creation date', async () => {
@@ -161,11 +164,28 @@ describe('WaitlistService', () => {
       shiftId: 'shift-1',
     });
 
-    expect(waitlistRepository.find).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { requestedDate: '2026-04-06', requestedShiftId: 'shift-1' },
-        order: { position: 'ASC', createdAt: 'ASC', id: 'ASC' },
-      }),
-    );
+    const firstFindCall = waitlistRepository.find.mock.calls[0] as [
+      {
+        where: {
+          requestedDate: string;
+          requestedShiftId: string;
+          status: unknown;
+        };
+        order: {
+          position: 'ASC';
+          createdAt: 'ASC';
+          id: 'ASC';
+        };
+      },
+    ];
+
+    expect(firstFindCall[0].where.requestedDate).toBe('2026-04-06');
+    expect(firstFindCall[0].where.requestedShiftId).toBe('shift-1');
+    expect(firstFindCall[0].where.status).toBeDefined();
+    expect(firstFindCall[0].order).toEqual({
+      position: 'ASC',
+      createdAt: 'ASC',
+      id: 'ASC',
+    });
   });
 });

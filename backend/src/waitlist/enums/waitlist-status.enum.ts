@@ -9,5 +9,4 @@ export enum WaitlistStatus {
 export const ACTIVE_WAITLIST_STATUSES: WaitlistStatus[] = [
   WaitlistStatus.Waiting,
   WaitlistStatus.Notified,
-  WaitlistStatus.Accepted,
 ];

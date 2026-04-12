@@ -4,6 +4,7 @@ import {
   fetchDailyReportSummary,
   fetchFrequentCustomers,
   listCustomersWithMetrics,
+  listShifts,
   listReportSnapshots,
   listReservationsByDate,
   updateCustomer,
@@ -15,6 +16,7 @@ import type {
   FrequentCustomerRow,
   ReportSnapshot,
   Reservation,
+  Shift,
 } from '../api/types'
 import { StatusMessage } from '../components/StatusMessage'
 import { formatDate, formatDateTime, formatPercent } from '../lib/format'
@@ -37,6 +39,7 @@ interface CustomerEditForm {
 
 interface ReportFilters {
   date: string
+  shiftId: string
   days: string
   minVisits: string
   limit: string
@@ -52,6 +55,7 @@ const today = new Date().toISOString().slice(0, 10)
 
 const initialReportFilters: ReportFilters = {
   date: today,
+  shiftId: '',
   days: '7',
   minVisits: '2',
   limit: '8',
@@ -69,12 +73,22 @@ const formatReservationStatus = (status: Reservation['status']): string => {
   const labels: Record<Reservation['status'], string> = {
     PENDING: 'Pendiente',
     CONFIRMED: 'Confirmada',
-    CANCELLED: 'Cancelada',
+    CANCELLED: 'Cancelada por cliente',
     NO_SHOW: 'No-show',
     SEATED: 'Sentado',
     COMPLETED: 'Completada',
   }
   return labels[status]
+}
+
+const formatCancellationSummary = (reservation: Reservation): string | null => {
+  if (reservation.status !== 'CANCELLED') {
+    return null
+  }
+
+  const reason = reservation.cancellationReason?.trim() || 'Sin motivo especificado'
+
+  return `Cancelada el ${formatDateTime(reservation.updatedAt)} · Motivo: ${reason}`
 }
 
 export function ManagerPage() {
@@ -110,6 +124,7 @@ export function ManagerPage() {
     message: '',
     data: null,
   })
+  const [shifts, setShifts] = useState<Shift[]>([])
   const [comparisonState, setComparisonState] = useState<ResultState<DailyComparisonRow[]>>({
     status: 'idle',
     message: '',
@@ -175,7 +190,12 @@ export function ManagerPage() {
     const [summaryResult, comparisonResult, frequentResult, snapshotsResult] = await Promise.allSettled([
       fetchDailyReportSummary({ date: filters.date || undefined }),
       fetchDailyReportComparison({ date: filters.date || undefined, days }),
-      fetchFrequentCustomers({ minVisits, limit }),
+      fetchFrequentCustomers({
+        date: filters.date || undefined,
+        shiftId: filters.shiftId || undefined,
+        minVisits,
+        limit,
+      }),
       listReportSnapshots(),
     ])
 
@@ -210,6 +230,10 @@ export function ManagerPage() {
       void loadHistory(today)
       void loadReports(initialReportFilters)
     }, 0)
+
+    void listShifts()
+      .then((data) => setShifts(data))
+      .catch(() => setShifts([]))
 
     return () => window.clearTimeout(timeoutId)
   }, [])
@@ -468,17 +492,22 @@ export function ManagerPage() {
                   <th>Estado</th>
                 </tr>
               </thead>
-              <tbody>
-                {historyState.data.length ? (
-                  historyState.data.map((reservation) => (
-                    <tr key={reservation.id}>
-                      <td>{formatDateTime(reservation.startsAt)}</td>
-                      <td>{reservation.customer?.fullName ?? reservation.customerId}</td>
-                      <td>{reservation.partySize}</td>
-                      <td>{reservation.table?.tableNumber ? `M${reservation.table.tableNumber}` : '—'}</td>
-                      <td>{formatReservationStatus(reservation.status)}</td>
-                    </tr>
-                  ))
+                  <tbody>
+                    {historyState.data.length ? (
+                      historyState.data.map((reservation) => (
+                        <tr key={reservation.id}>
+                          <td>{formatDateTime(reservation.startsAt)}</td>
+                          <td>{reservation.customer?.fullName ?? reservation.customerId}</td>
+                          <td>{reservation.partySize}</td>
+                          <td>{reservation.table?.tableNumber ? `M${reservation.table.tableNumber}` : '—'}</td>
+                          <td>
+                            <div>{formatReservationStatus(reservation.status)}</div>
+                            {formatCancellationSummary(reservation) ? (
+                              <div className="subtle">{formatCancellationSummary(reservation)}</div>
+                            ) : null}
+                          </td>
+                        </tr>
+                      ))
                 ) : (
                   <tr>
                     <td colSpan={5}>Sin historial para la fecha seleccionada.</td>
@@ -527,6 +556,23 @@ export function ManagerPage() {
               </div>
 
               <div className="form-grid">
+                <label>
+                  Turno para clientes frecuentes
+                  <select
+                    value={reportFilters.shiftId}
+                    onChange={(event) =>
+                      setReportFilters({ ...reportFilters, shiftId: event.target.value })
+                    }
+                  >
+                    <option value="">Todos los turnos</option>
+                    {shifts.map((shift) => (
+                      <option key={shift.id} value={shift.id}>
+                        {shift.shiftName}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
                 <label>
                   Mínimo de visitas
                   <input

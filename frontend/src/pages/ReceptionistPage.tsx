@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react
 import axios from 'axios'
 import {
   createCustomer,
+  cancelReservation,
   assignReservationTable,
   createReservation,
   listCustomers,
@@ -285,6 +286,7 @@ export function ReceptionistPage() {
   const [selectedFinalStatusByReservationId, setSelectedFinalStatusByReservationId] = useState<
     Record<string, ReservationStatus | ''>
   >({})
+  const [cancellationReasonByReservationId, setCancellationReasonByReservationId] = useState<Record<string, string>>({})
   const [selectedTableForReservationById, setSelectedTableForReservationById] = useState<
     Record<string, string>
   >({})
@@ -421,7 +423,7 @@ export function ReceptionistPage() {
   }, [])
 
   const handleReservationSend = useCallback(
-    async (reservationId: string, status: ReservationStatus) => {
+    async (reservationId: string, status: ReservationStatus, reason?: string) => {
       setReservationState({
         status: 'loading',
         message: 'Enviando reserva...',
@@ -429,15 +431,27 @@ export function ReceptionistPage() {
       })
 
       try {
-        const updatedReservation = await updateReservationStatus(reservationId, { status })
+        const updatedReservation =
+          status === 'CANCELLED'
+            ? await cancelReservation(reservationId, { reason: reason?.trim() })
+            : await updateReservationStatus(reservationId, { status })
 
         setReservationState({
           status: 'success',
-          message: 'Reserva finalizada y enviada a reportes.',
+          message:
+            status === 'CANCELLED'
+              ? 'Reserva cancelada y enviada a reportes.'
+              : 'Reserva finalizada y enviada a reportes.',
           data: updatedReservation,
         })
 
         setSelectedFinalStatusByReservationId((current) => {
+          const next = { ...current }
+          delete next[reservationId]
+          return next
+        })
+
+        setCancellationReasonByReservationId((current) => {
           const next = { ...current }
           delete next[reservationId]
           return next
@@ -976,10 +990,11 @@ export function ReceptionistPage() {
               />
             </label>
 
-            <div className="history-list receptionist-scroll-list receptionist-future-reservations-list receptionist-upcoming-scroll">
+    <div className="history-list receptionist-scroll-list receptionist-future-reservations-list receptionist-upcoming-scroll">
               {activeReservations.length ? (
                 activeReservations.map((reservation) => {
                   const selectedFinalStatus = selectedFinalStatusByReservationId[reservation.id] ?? ''
+                  const cancellationReason = cancellationReasonByReservationId[reservation.id] ?? ''
                   const assignableTables = getAssignableTables(reservation)
                   const selectedAssignableTableId =
                     selectedTableForReservationById[reservation.id] ??
@@ -1036,9 +1051,27 @@ export function ReceptionistPage() {
                                 {option.label}
                               </option>
                             ))}
-                          </select>
-                        </label>
-                        <label className="reservation-status-control">
+                            </select>
+                          </label>
+                          {selectedFinalStatus === 'CANCELLED' ? (
+                            <label className="reservation-status-control">
+                              Motivo de cancelación
+                              <textarea
+                                rows={2}
+                                minLength={3}
+                                maxLength={255}
+                                value={cancellationReason}
+                                placeholder="Ej: No pudo asistir"
+                                onChange={(event) =>
+                                  setCancellationReasonByReservationId((current) => ({
+                                    ...current,
+                                    [reservation.id]: event.target.value,
+                                  }))
+                                }
+                              />
+                            </label>
+                          ) : null}
+                          <label className="reservation-status-control">
                           Mesa
                           <select
                             value={selectedAssignableTableId}
@@ -1079,7 +1112,20 @@ export function ReceptionistPage() {
                               return
                             }
 
-                            void handleReservationSend(reservation.id, selectedFinalStatus)
+                            if (selectedFinalStatus === 'CANCELLED' && cancellationReason.trim().length < 3) {
+                              setReservationState({
+                                status: 'error',
+                                message: 'Escribí un motivo de cancelación de al menos 3 caracteres.',
+                                data: null,
+                              })
+                              return
+                            }
+
+                            void handleReservationSend(
+                              reservation.id,
+                              selectedFinalStatus,
+                              cancellationReason,
+                            )
                           }}
                           disabled={!selectedFinalStatus}
                           aria-label="Enviar reserva"

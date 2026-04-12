@@ -7,6 +7,7 @@ import type {
   CreateReservationRequest,
   CreateWaitlistEntryRequest,
   Customer,
+  CancelReservationRequest,
   ListReservationsQuery,
   ListWaitlistQuery,
   Reservation,
@@ -56,8 +57,11 @@ export const assignReservationTable = async (
   return data
 }
 
-export const cancelReservation = async (id: string): Promise<Reservation> => {
-  const { data } = await api.patch<Reservation>(`/reservations/${id}/cancel`)
+export const cancelReservation = async (
+  id: string,
+  payload?: CancelReservationRequest,
+): Promise<Reservation> => {
+  const { data } = await api.patch<Reservation>(`/reservations/${id}/cancel`, payload)
   return data
 }
 

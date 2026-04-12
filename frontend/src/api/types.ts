@@ -92,6 +92,7 @@ export interface Reservation {
   partySize: number
   status: ReservationStatus
   specialRequests: string | null
+  cancellationReason: string | null
   notes: string | null
   createdByUserId: string | null
   createdAt: string
@@ -311,6 +312,10 @@ export interface UpdateReservationStatusRequest {
   status: ReservationStatus
 }
 
+export interface CancelReservationRequest {
+  reason?: string
+}
+
 export interface ListReservationsQuery {
   date?: string
   shiftId?: string
@@ -397,6 +402,8 @@ export interface DailyOccupancyQuery {
 }
 
 export interface FrequentCustomersQuery {
+  date?: string
+  shiftId?: string
   minVisits?: number
   limit?: number
 }

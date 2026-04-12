@@ -116,4 +116,20 @@ describe('ReportsService', () => {
     expect(rows[0].visitCount).toBe(5);
     expect(rows[0].noShowCount).toBe(1);
   });
+
+  it('filters frequent customers by date and shift', async () => {
+    dataSource.query.mockResolvedValue([]);
+
+    await service.getFrequentCustomers({
+      date: new Date('2026-04-06T00:00:00.000Z'),
+      shiftId: 'shift-1',
+      minVisits: 2,
+      limit: 10,
+    });
+
+    expect(dataSource.query).toHaveBeenCalledWith(
+      expect.stringContaining('reservation_date = $1::date'),
+      ['2026-04-06', 'shift-1', 2, 10],
+    );
+  });
 });

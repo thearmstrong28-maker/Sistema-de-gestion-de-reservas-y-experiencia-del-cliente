@@ -5,6 +5,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { CustomerEntity } from '../customers/entities/customer.entity';
 import { ShiftEntity } from '../shifts/entities/shift.entity';
 import { WaitlistEntryEntity } from '../waitlist/entities/waitlist-entry.entity';
+import { WaitlistStatus } from '../waitlist/enums/waitlist-status.enum';
 import { ReservationEntity } from './entities/reservation.entity';
 import { ReservationStatus } from './enums/reservation-status.enum';
 import { RestaurantTableEntity } from './entities/table.entity';
@@ -34,7 +35,6 @@ describe('ReservationsService', () => {
   let waitlistRepository: {
     create: jest.Mock;
     save: jest.Mock;
-    delete: jest.Mock;
   };
   let configService: { get: jest.Mock };
 
@@ -82,7 +82,6 @@ describe('ReservationsService', () => {
       save: jest.fn((value: WaitlistEntryEntity) =>
         Promise.resolve({ id: 'waitlist-1', ...value }),
       ),
-      delete: jest.fn().mockResolvedValue(undefined),
     };
 
     configService = {
@@ -271,14 +270,18 @@ describe('ReservationsService', () => {
     expect(reservation.id).toBe('reservation-matutino-1');
     expect(reservation.shiftId).toBe('shift-matutino-1');
     expect(reservation.reservationDate).toBe('2026-04-11');
+    expect(reservation.status).toBe(ReservationStatus.Confirmed);
     expect(reservationRepository.create).toHaveBeenCalledWith(
       expect.objectContaining({
         shiftId: 'shift-matutino-1',
         startsAt: new Date(2026, 3, 11, 8, 0, 0),
       }),
     );
-    expect(waitlistRepository.delete).toHaveBeenCalledWith(
-      'waitlist-matutino-1',
+    expect(waitlistRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'waitlist-matutino-1',
+        status: WaitlistStatus.Accepted,
+      }),
     );
   });
 
@@ -337,8 +340,11 @@ describe('ReservationsService', () => {
         startsAt: new Date(2026, 3, 11, 20, 0, 0),
       }),
     );
-    expect(waitlistRepository.delete).toHaveBeenCalledWith(
-      'waitlist-vespertino-1',
+    expect(waitlistRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'waitlist-vespertino-1',
+        status: WaitlistStatus.Accepted,
+      }),
     );
   });
 
@@ -394,7 +400,12 @@ describe('ReservationsService', () => {
         createdByUserId: 'user-admin-001',
       }),
     );
-    expect(waitlistRepository.delete).toHaveBeenCalledWith('waitlist-1');
+    expect(waitlistRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'waitlist-1',
+        status: WaitlistStatus.Accepted,
+      }),
+    );
     expect(tableRepository.find).toHaveBeenCalledWith(
       expect.objectContaining({
         order: { capacity: 'ASC', tableNumber: 'ASC', id: 'ASC' },
@@ -492,6 +503,7 @@ describe('ReservationsService', () => {
     reservationRepository.findOne.mockResolvedValue({
       id: 'reservation-1',
       status: ReservationStatus.Pending,
+      tableId: 'table-1',
     });
     reservationRepository.save.mockImplementation((value: ReservationEntity) =>
       Promise.resolve(value),
@@ -499,12 +511,40 @@ describe('ReservationsService', () => {
 
     const cancelled = await service.cancel('reservation-1');
     expect(cancelled.status).toBe(ReservationStatus.Cancelled);
+    expect(cancelled.cancellationReason).toBe('Sin motivo especificado');
+  });
+
+  it('persists cancellation reason when cancelling an active reservation', async () => {
+    reservationRepository.findOne.mockResolvedValue({
+      id: 'reservation-2',
+      status: ReservationStatus.Confirmed,
+      tableId: 'table-2',
+    });
+    reservationRepository.save.mockImplementation((value: ReservationEntity) =>
+      Promise.resolve(value),
+    );
+
+    const cancelled = await service.cancel(
+      'reservation-2',
+      'Cliente no pudo asistir',
+    );
+
+    expect(cancelled.status).toBe(ReservationStatus.Cancelled);
+    expect(cancelled.cancellationReason).toBe('Cliente no pudo asistir');
+    expect(reservationRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'reservation-2',
+        cancellationReason: 'Cliente no pudo asistir',
+        status: ReservationStatus.Cancelled,
+      }),
+    );
   });
 
   it('marks no-show on an active reservation', async () => {
     reservationRepository.findOne.mockResolvedValue({
       id: 'reservation-1',
       status: ReservationStatus.Confirmed,
+      startsAt: new Date('2026-03-26T11:30:00.000Z'),
     });
     reservationRepository.save.mockImplementation((value: ReservationEntity) =>
       Promise.resolve(value),
@@ -512,6 +552,19 @@ describe('ReservationsService', () => {
 
     const noShow = await service.markNoShow('reservation-1');
     expect(noShow.status).toBe(ReservationStatus.NoShow);
+  });
+
+  it('rejects no-show before the grace period expires', async () => {
+    reservationRepository.findOne.mockResolvedValue({
+      id: 'reservation-1',
+      status: ReservationStatus.Confirmed,
+      startsAt: new Date('2026-03-26T11:55:00.000Z'),
+    });
+
+    await expect(service.markNoShow('reservation-1')).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(reservationRepository.save).not.toHaveBeenCalled();
   });
 
   it('updates reservation status for receptionist actions', async () => {

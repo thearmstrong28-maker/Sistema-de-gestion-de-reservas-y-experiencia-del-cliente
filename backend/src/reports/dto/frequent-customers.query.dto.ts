@@ -1,7 +1,16 @@
 import { Type } from 'class-transformer';
-import { IsInt, IsOptional, Min } from 'class-validator';
+import { IsDate, IsInt, IsOptional, IsUUID, Min } from 'class-validator';
 
 export class FrequentCustomersQueryDto {
+  @IsOptional()
+  @Type(() => Date)
+  @IsDate({ message: 'La fecha no es válida.' })
+  date?: Date;
+
+  @IsOptional()
+  @IsUUID()
+  shiftId?: string;
+
   @IsOptional()
   @Type(() => Number)
   @IsInt({ message: 'El mínimo de visitas debe ser un número entero.' })

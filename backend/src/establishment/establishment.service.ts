@@ -27,7 +27,10 @@ import {
 import { ShiftEntity } from '../shifts/entities/shift.entity';
 import { UserEntity } from '../auth/entities/user.entity';
 import { WaitlistEntryEntity } from '../waitlist/entities/waitlist-entry.entity';
-import { ACTIVE_WAITLIST_STATUSES } from '../waitlist/enums/waitlist-status.enum';
+import {
+  ACTIVE_WAITLIST_STATUSES,
+  WaitlistStatus,
+} from '../waitlist/enums/waitlist-status.enum';
 import { CreateTablesBulkDto } from './dto/create-tables-bulk.dto';
 import {
   CreateTablesDistributionDto,
@@ -406,7 +409,8 @@ export class EstablishmentService {
         await reservationRepository.save(createdReservation);
       }
 
-      await waitlistRepository.delete(candidate.id);
+      candidate.status = WaitlistStatus.Accepted;
+      await waitlistRepository.save(candidate);
       return true;
     }
 

@@ -160,7 +160,7 @@ describe('EstablishmentService', () => {
         addOrderBy: jest.fn().mockReturnThis(),
         getMany: jest.fn().mockResolvedValue([waitlistCandidate]),
       })),
-      delete: jest.fn().mockResolvedValue(undefined),
+      save: jest.fn((value: WaitlistEntryEntity) => Promise.resolve(value)),
     };
 
     const reservationRepoInTx = {
@@ -195,7 +195,12 @@ describe('EstablishmentService', () => {
         shiftId: 'shift-matutino',
       }),
     );
-    expect(waitlistRepoInTx.delete).toHaveBeenCalledWith('wait-1');
+    expect(waitlistRepoInTx.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'wait-1',
+        status: WaitlistStatus.Accepted,
+      }),
+    );
     expect(updated.availabilityStatus).toBe(TableAvailabilityStatus.Ocupada);
   });
 

@@ -9,6 +9,7 @@ import type {
   FrequentCustomersQuery,
   ReportSnapshot,
   Reservation,
+  Shift,
   UpdateCustomerRequest,
 } from './types'
 
@@ -56,6 +57,11 @@ export const fetchFrequentCustomers = async (
   const { data } = await api.get<FrequentCustomerRow[]>('/reports/frequent-customers', {
     params: query,
   })
+  return data
+}
+
+export const listShifts = async (): Promise<Shift[]> => {
+  const { data } = await api.get<Shift[]>('/shifts')
   return data
 }
 

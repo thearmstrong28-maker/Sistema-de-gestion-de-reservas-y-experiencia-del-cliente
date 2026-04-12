@@ -1,12 +1,16 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { Client } = require('pg');
+const { loadBackendEnv } = require('./load-env');
+
+loadBackendEnv();
 
 const DB_HOST = process.env.DB_HOST || 'localhost';
 const DB_PORT = Number(process.env.DB_PORT || 5432);
 const DB_USER = process.env.DB_USER || 'postgres';
 const DB_PASSWORD = process.env.DB_PASSWORD || '34343434';
 const DB_NAME = process.env.DB_NAME || 'Sistema de gestión de reservas y experiencia del cliente';
+const DATABASE_URL = process.env.DATABASE_URL;
 const DATABASE_DIR = path.resolve(__dirname, '../database');
 const SQL_FILES = process.argv[2]
   ? [path.resolve(process.argv[2])]
@@ -29,11 +33,12 @@ function quoteIdent(value) {
 
 async function ensureDatabaseExists() {
   const adminClient = new Client({
-    host: DB_HOST,
-    port: DB_PORT,
-    user: DB_USER,
-    password: DB_PASSWORD,
-    database: 'postgres',
+    connectionString: DATABASE_URL,
+    host: DATABASE_URL ? undefined : DB_HOST,
+    port: DATABASE_URL ? undefined : DB_PORT,
+    user: DATABASE_URL ? undefined : DB_USER,
+    password: DATABASE_URL ? undefined : DB_PASSWORD,
+    database: DATABASE_URL ? undefined : 'postgres',
   });
 
   await adminClient.connect();
@@ -51,11 +56,12 @@ async function ensureDatabaseExists() {
 
 async function applySchema() {
   const client = new Client({
-    host: DB_HOST,
-    port: DB_PORT,
-    user: DB_USER,
-    password: DB_PASSWORD,
-    database: DB_NAME,
+    connectionString: DATABASE_URL,
+    host: DATABASE_URL ? undefined : DB_HOST,
+    port: DATABASE_URL ? undefined : DB_PORT,
+    user: DATABASE_URL ? undefined : DB_USER,
+    password: DATABASE_URL ? undefined : DB_PASSWORD,
+    database: DATABASE_URL ? undefined : DB_NAME,
   });
 
   await client.connect();

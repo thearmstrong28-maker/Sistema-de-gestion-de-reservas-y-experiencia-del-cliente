@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, IsNull, Repository } from 'typeorm';
 import { CustomerEntity } from '../customers/entities/customer.entity';
 import { ShiftEntity } from '../shifts/entities/shift.entity';
 import {
@@ -81,6 +81,7 @@ export class WaitlistService {
       where: {
         ...(requestedDate ? { requestedDate } : {}),
         ...(query.shiftId ? { requestedShiftId: query.shiftId } : {}),
+        status: In(ACTIVE_WAITLIST_STATUSES),
       },
       relations: { customer: true, requestedShift: true },
       order: {
@@ -205,11 +206,14 @@ export class WaitlistService {
     requestedDate: string,
     requestedShiftId: string | null,
   ): Promise<WaitlistEntryEntity | null> {
+    const requestedShiftWhere =
+      requestedShiftId === null ? IsNull() : requestedShiftId;
+
     return this.waitlistRepository.findOne({
       where: {
         customerId,
         requestedDate,
-        requestedShiftId,
+        requestedShiftId: requestedShiftWhere,
         status: WaitlistStatus.Waiting,
       },
     });

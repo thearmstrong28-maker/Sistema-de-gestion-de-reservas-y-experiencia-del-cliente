@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ILike, Repository } from 'typeorm';
 import { ReservationEntity } from '../reservations/entities/reservation.entity';
@@ -24,10 +29,17 @@ export class CustomersService {
   ) {}
 
   async create(createCustomerDto: CreateCustomerDto): Promise<CustomerEntity> {
+    const fullName = createCustomerDto.fullName.trim();
+    const email = this.normalizeEmail(createCustomerDto.email);
+    const phone = this.normalizePhone(createCustomerDto.phone);
+
+    this.ensureCustomerHasContactMethod(fullName, email, phone);
+    await this.ensureCustomerDoesNotDuplicate({ email, phone });
+
     const customer = this.customerRepository.create({
-      fullName: createCustomerDto.fullName.trim(),
-      email: createCustomerDto.email?.trim().toLowerCase(),
-      phone: createCustomerDto.phone,
+      fullName,
+      email,
+      phone,
       preferences: createCustomerDto.preferences ?? {},
       notes: createCustomerDto.notes,
     });
@@ -70,12 +82,26 @@ export class CustomersService {
     customer.fullName = updateCustomerDto.fullName?.trim() ?? customer.fullName;
     customer.email =
       updateCustomerDto.email !== undefined
-        ? updateCustomerDto.email.trim().toLowerCase()
+        ? this.normalizeEmail(updateCustomerDto.email)
         : customer.email;
-    customer.phone = updateCustomerDto.phone ?? customer.phone;
+    customer.phone =
+      updateCustomerDto.phone !== undefined
+        ? this.normalizePhone(updateCustomerDto.phone)
+        : customer.phone;
     customer.preferences =
       updateCustomerDto.preferences ?? customer.preferences;
     customer.notes = updateCustomerDto.notes ?? customer.notes;
+
+    this.ensureCustomerHasContactMethod(
+      customer.fullName,
+      customer.email ?? null,
+      customer.phone ?? null,
+    );
+    await this.ensureCustomerDoesNotDuplicate({
+      email: customer.email ?? null,
+      phone: customer.phone ?? null,
+      customerIdToExclude: customer.id,
+    });
 
     return this.customerRepository.save(customer);
   }
@@ -145,5 +171,65 @@ export class CustomersService {
       order: { startsAt: 'DESC' },
       take: 200,
     });
+  }
+
+  private normalizeEmail(email?: string): string | null {
+    const normalized = email?.trim().toLowerCase();
+    return normalized ? normalized : null;
+  }
+
+  private normalizePhone(phone?: string): string | null {
+    const normalized = phone?.trim();
+    return normalized ? normalized : null;
+  }
+
+  private ensureCustomerHasContactMethod(
+    fullName: string,
+    email: string | null,
+    phone: string | null,
+  ): void {
+    if (!fullName.trim()) {
+      throw new BadRequestException('El nombre del cliente es obligatorio');
+    }
+
+    if (!email && !phone) {
+      throw new BadRequestException(
+        'El cliente debe tener al menos un medio de contacto',
+      );
+    }
+  }
+
+  private async ensureCustomerDoesNotDuplicate({
+    email,
+    phone,
+    customerIdToExclude,
+  }: {
+    email: string | null;
+    phone: string | null;
+    customerIdToExclude?: string;
+  }): Promise<void> {
+    const where = [
+      ...(email ? [{ email }] : []),
+      ...(phone ? [{ phone }] : []),
+    ];
+
+    if (!where.length) {
+      return;
+    }
+
+    const matches = await this.customerRepository.find({
+      where,
+      select: { id: true, email: true, phone: true },
+    });
+
+    const conflictingCustomer = matches.find(
+      (customer) => customer.id !== customerIdToExclude,
+    );
+
+    if (conflictingCustomer) {
+      throw new ConflictException(
+        'Ya existe un cliente con ese correo o teléfono',
+      );
+    }
   }
 }

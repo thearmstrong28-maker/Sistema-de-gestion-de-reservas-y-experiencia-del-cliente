@@ -18,16 +18,27 @@ import { WaitlistModule } from './waitlist/waitlist.module';
     TypeOrmModule.forRootAsync({
       useFactory: () => {
         const dbPort = Number(process.env.DB_PORT ?? 5432);
+        const databaseUrl = process.env.DATABASE_URL;
 
         return {
           type: 'postgres' as const,
-          host: process.env.DB_HOST ?? 'localhost',
-          port: Number.isFinite(dbPort) ? dbPort : 5432,
-          username: process.env.DB_USER ?? 'postgres',
-          password: process.env.DB_PASSWORD ?? '34343434',
-          database:
-            process.env.DB_NAME ??
-            'Sistema de gestión de reservas y experiencia del cliente',
+          url: databaseUrl,
+          host: databaseUrl ? undefined : (process.env.DB_HOST ?? 'localhost'),
+          port: databaseUrl
+            ? undefined
+            : Number.isFinite(dbPort)
+              ? dbPort
+              : 5432,
+          username: databaseUrl
+            ? undefined
+            : (process.env.DB_USER ?? 'postgres'),
+          password: databaseUrl
+            ? undefined
+            : (process.env.DB_PASSWORD ?? '34343434'),
+          database: databaseUrl
+            ? undefined
+            : (process.env.DB_NAME ??
+              'Sistema de gestión de reservas y experiencia del cliente'),
           ssl:
             process.env.DB_SSL === 'true'
               ? { rejectUnauthorized: false }

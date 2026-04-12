@@ -75,6 +75,9 @@ export class ReservationEntity {
   @Column({ name: 'special_requests', type: 'text', nullable: true })
   specialRequests?: string | null;
 
+  @Column({ name: 'cancellation_reason', type: 'text', nullable: true })
+  cancellationReason?: string | null;
+
   @Column({ type: 'text', nullable: true })
   notes?: string | null;
 

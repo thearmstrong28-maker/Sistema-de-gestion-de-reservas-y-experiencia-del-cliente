@@ -196,23 +196,29 @@ export class ReportsService {
   ): Promise<FrequentCustomerRow[]> {
     const limit = Math.min(query.limit ?? 100, 500);
     const minVisits = query.minVisits ?? 1;
+    const date = query.date ? query.date.toISOString().slice(0, 10) : null;
 
     const rawRows: unknown = await this.dataSource.query(
       `
         SELECT
-          customer_id AS "customerId",
-          full_name AS "fullName",
-          email,
-          phone,
-          visit_count AS "visitCount",
-          no_show_count AS "noShowCount",
-          last_visit_at AS "lastVisitAt"
-        FROM frequent_customers
-        WHERE visit_count >= $1
-        ORDER BY visit_count DESC, last_visit_at DESC NULLS LAST, full_name ASC
-        LIMIT $2
+          c.id AS "customerId",
+          c.full_name AS "fullName",
+          c.email,
+          c.phone,
+          COUNT(r.id) FILTER (WHERE r.status IN ('SEATED', 'COMPLETED')) AS "visitCount",
+          COUNT(r.id) FILTER (WHERE r.status = 'NO_SHOW') AS "noShowCount",
+          MAX(r.starts_at) FILTER (WHERE r.status IN ('SEATED', 'COMPLETED')) AS "lastVisitAt"
+        FROM customers c
+        LEFT JOIN reservations r
+          ON r.customer_id = c.id
+         AND ($1::date IS NULL OR r.reservation_date = $1::date)
+         AND ($2::uuid IS NULL OR r.shift_id = $2::uuid)
+        GROUP BY c.id, c.full_name, c.email, c.phone
+        HAVING COUNT(r.id) FILTER (WHERE r.status IN ('SEATED', 'COMPLETED')) >= $3
+        ORDER BY "visitCount" DESC, "lastVisitAt" DESC NULLS LAST, "fullName" ASC
+        LIMIT $4
       `,
-      [minVisits, limit],
+      [date, query.shiftId ?? null, minVisits, limit],
     );
     const rows = rawRows as Array<Record<string, unknown>>;
 

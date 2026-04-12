@@ -1,10 +1,14 @@
 const { Client } = require('pg');
+const { loadBackendEnv } = require('./load-env');
+
+loadBackendEnv();
 
 const DB_HOST = process.env.DB_HOST || 'localhost';
 const DB_PORT = Number(process.env.DB_PORT || 5432);
 const DB_USER = process.env.DB_USER || 'postgres';
 const DB_PASSWORD = process.env.DB_PASSWORD || '34343434';
 const DB_NAME = process.env.DB_NAME || 'Sistema de gestión de reservas y experiencia del cliente';
+const DATABASE_URL = process.env.DATABASE_URL;
 
 const REQUIRED_ENUM_LABELS = [
   'PENDING',
@@ -40,11 +44,12 @@ const REQUIRED_OBJECTS = [
 
 function makeClient() {
   return new Client({
-    host: DB_HOST,
-    port: DB_PORT,
-    user: DB_USER,
-    password: DB_PASSWORD,
-    database: DB_NAME,
+    connectionString: DATABASE_URL,
+    host: DATABASE_URL ? undefined : DB_HOST,
+    port: DATABASE_URL ? undefined : DB_PORT,
+    user: DATABASE_URL ? undefined : DB_USER,
+    password: DATABASE_URL ? undefined : DB_PASSWORD,
+    database: DATABASE_URL ? undefined : DB_NAME,
   });
 }
 

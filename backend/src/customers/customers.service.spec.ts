@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { ReservationEntity } from '../reservations/entities/reservation.entity';
@@ -32,7 +32,7 @@ describe('CustomersService', () => {
         id: 'customer-1',
         ...value,
       })),
-      find: jest.fn(),
+      find: jest.fn().mockResolvedValue([]),
       findOne: jest.fn(),
     };
 
@@ -85,6 +85,32 @@ describe('CustomersService', () => {
     expect(customer.id).toBe('customer-1');
   });
 
+  it('rejects customers without any contact method', async () => {
+    await expect(
+      service.create({
+        fullName: 'Ana Ruiz',
+      } as never),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('rejects duplicate customers by phone or email', async () => {
+    customerRepository.find.mockResolvedValueOnce([
+      {
+        id: 'customer-99',
+        email: 'ana@mail.test',
+        phone: '+5491111111111',
+      },
+    ]);
+
+    await expect(
+      service.create({
+        fullName: 'Ana Ruiz',
+        email: 'ana@mail.test',
+        phone: '+5491111111111',
+      }),
+    ).rejects.toThrow('Ya existe un cliente con ese correo o teléfono');
+  });
+
   it('returns visit history for existing customer', async () => {
     customerRepository.findOne.mockResolvedValue({ id: 'customer-1' });
     reservationRepository.find.mockResolvedValue([{ id: 'reservation-1' }]);
@@ -104,6 +130,47 @@ describe('CustomersService', () => {
     await expect(service.getVisitHistory('missing')).rejects.toBeInstanceOf(
       NotFoundException,
     );
+  });
+
+  it('rejects updates that would leave the customer without contact info', async () => {
+    customerRepository.findOne.mockResolvedValueOnce({
+      id: 'customer-1',
+      fullName: 'Ana Ruiz',
+      email: null,
+      phone: null,
+      preferences: {},
+      notes: null,
+    });
+
+    await expect(
+      service.update('customer-1', {
+        fullName: 'Ana Ruiz',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('rejects duplicate phone numbers on update', async () => {
+    customerRepository.findOne.mockResolvedValueOnce({
+      id: 'customer-1',
+      fullName: 'Ana Ruiz',
+      email: 'ana@mail.test',
+      phone: '+5491111111111',
+      preferences: {},
+      notes: null,
+    });
+    customerRepository.find.mockResolvedValueOnce([
+      {
+        id: 'customer-2',
+        email: 'ana.otra@mail.test',
+        phone: '+5492222222222',
+      },
+    ]);
+
+    await expect(
+      service.update('customer-1', {
+        phone: '+5492222222222',
+      }),
+    ).rejects.toThrow('Ya existe un cliente con ese correo o teléfono');
   });
 
   it('returns customer list with reservation metrics', async () => {

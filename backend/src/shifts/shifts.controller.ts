@@ -7,7 +7,7 @@ import { ShiftsService } from './shifts.service';
 
 @Controller('shifts')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.Admin, Role.Host)
+@Roles(Role.Admin, Role.Host, Role.Manager)
 export class ShiftsController {
   constructor(private readonly shiftsService: ShiftsService) {}
 
