@@ -11,6 +11,7 @@ import { CreateCustomerDto } from './dto/create-customer.dto';
 import { ListCustomersQueryDto } from './dto/list-customers.query.dto';
 import { UpdateCustomerDto } from './dto/update-customer.dto';
 import { CustomerEntity } from './entities/customer.entity';
+import { WaitlistEntryEntity } from '../waitlist/entities/waitlist-entry.entity';
 
 export interface CustomerWithMetrics extends CustomerEntity {
   reservationsCount: number;
@@ -26,6 +27,8 @@ export class CustomersService {
     private readonly customerRepository: Repository<CustomerEntity>,
     @InjectRepository(ReservationEntity)
     private readonly reservationRepository: Repository<ReservationEntity>,
+    @InjectRepository(WaitlistEntryEntity)
+    private readonly waitlistEntryRepository: Repository<WaitlistEntryEntity>,
   ) {}
 
   async create(createCustomerDto: CreateCustomerDto): Promise<CustomerEntity> {
@@ -104,6 +107,30 @@ export class CustomersService {
     });
 
     return this.customerRepository.save(customer);
+  }
+
+  async remove(customerId: string): Promise<CustomerEntity> {
+    const customer = await this.customerRepository.findOne({
+      where: { id: customerId },
+    });
+
+    if (!customer) {
+      throw new NotFoundException('Customer not found');
+    }
+
+    const [reservationsCount, waitlistEntriesCount] = await Promise.all([
+      this.reservationRepository.count({ where: { customerId } }),
+      this.waitlistEntryRepository.count({ where: { customerId } }),
+    ]);
+
+    if (reservationsCount > 0 || waitlistEntriesCount > 0 || customer.userId) {
+      throw new BadRequestException(
+        'No se puede eliminar un cliente con reservas, lista de espera o usuario vinculado.',
+      );
+    }
+
+    await this.customerRepository.remove(customer);
+    return customer;
   }
 
   async listWithMetrics(

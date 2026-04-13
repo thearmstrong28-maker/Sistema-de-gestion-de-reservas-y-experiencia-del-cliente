@@ -18,9 +18,8 @@ describe('Auth login (e2e)', () => {
     process.env.DB_HOST ??= 'localhost';
     process.env.DB_PORT ??= '5432';
     process.env.DB_USER ??= 'postgres';
-    process.env.DB_PASSWORD ??= '34343434';
-    process.env.DB_NAME ??=
-      'Sistema de gestión de reservas y experiencia del cliente';
+    process.env.DB_PASSWORD ??= 'postgres';
+    process.env.DB_NAME ??= 'restaurant_reservations';
     process.env.DB_SYNCHRONIZE ??= 'false';
 
     const moduleRef: TestingModule = await Test.createTestingModule({

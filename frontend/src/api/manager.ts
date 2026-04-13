@@ -10,6 +10,7 @@ import type {
   ReportSnapshot,
   Reservation,
   Shift,
+  Customer,
   UpdateCustomerRequest,
 } from './types'
 
@@ -25,6 +26,11 @@ export const updateCustomer = async (
   payload: UpdateCustomerRequest,
 ): Promise<CustomerWithMetrics> => {
   const { data } = await api.patch<CustomerWithMetrics>(`/customers/${id}`, payload)
+  return data
+}
+
+export const deleteCustomer = async (id: string): Promise<Customer> => {
+  const { data } = await api.delete<Customer>(`/customers/${id}`)
   return data
 }
 

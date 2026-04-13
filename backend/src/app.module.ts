@@ -12,6 +12,9 @@ import { ShiftsModule } from './shifts/shifts.module';
 import { UsersModule } from './users/users.module';
 import { WaitlistModule } from './waitlist/waitlist.module';
 
+const DEFAULT_DB_NAME = 'restaurant_reservations';
+const DEFAULT_DB_PASSWORD = 'postgres';
+
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
@@ -34,11 +37,10 @@ import { WaitlistModule } from './waitlist/waitlist.module';
             : (process.env.DB_USER ?? 'postgres'),
           password: databaseUrl
             ? undefined
-            : (process.env.DB_PASSWORD ?? '34343434'),
+            : (process.env.DB_PASSWORD ?? DEFAULT_DB_PASSWORD),
           database: databaseUrl
             ? undefined
-            : (process.env.DB_NAME ??
-              'Sistema de gestión de reservas y experiencia del cliente'),
+            : (process.env.DB_NAME ?? DEFAULT_DB_NAME),
           ssl:
             process.env.DB_SSL === 'true'
               ? { rejectUnauthorized: false }

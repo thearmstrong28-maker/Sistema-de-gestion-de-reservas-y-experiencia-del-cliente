@@ -6,8 +6,8 @@ loadBackendEnv();
 const DB_HOST = process.env.DB_HOST || 'localhost';
 const DB_PORT = Number(process.env.DB_PORT || 5432);
 const DB_USER = process.env.DB_USER || 'postgres';
-const DB_PASSWORD = process.env.DB_PASSWORD || '34343434';
-const DB_NAME = process.env.DB_NAME || 'Sistema de gestión de reservas y experiencia del cliente';
+const DB_PASSWORD = process.env.DB_PASSWORD || 'postgres';
+const DB_NAME = process.env.DB_NAME || 'restaurant_reservations';
 const DATABASE_URL = process.env.DATABASE_URL;
 
 const REQUIRED_ENUM_LABELS = [

@@ -2,6 +2,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { ReservationEntity } from '../reservations/entities/reservation.entity';
+import { WaitlistEntryEntity } from '../waitlist/entities/waitlist-entry.entity';
 import { CustomersService } from './customers.service';
 import { CustomerEntity } from './entities/customer.entity';
 
@@ -12,10 +13,15 @@ describe('CustomersService', () => {
     save: jest.Mock;
     find: jest.Mock;
     findOne: jest.Mock;
+    remove: jest.Mock;
   };
   let reservationRepository: {
+    count: jest.Mock;
     find: jest.Mock;
     createQueryBuilder: jest.Mock;
+  };
+  let waitlistRepository: {
+    count: jest.Mock;
   };
   let reservationQueryBuilder: {
     select: jest.Mock;
@@ -34,6 +40,7 @@ describe('CustomersService', () => {
       })),
       find: jest.fn().mockResolvedValue([]),
       findOne: jest.fn(),
+      remove: jest.fn().mockImplementation((value: CustomerEntity) => value),
     };
 
     reservationQueryBuilder = {
@@ -45,8 +52,13 @@ describe('CustomersService', () => {
     };
 
     reservationRepository = {
+      count: jest.fn().mockResolvedValue(0),
       find: jest.fn(),
       createQueryBuilder: jest.fn().mockReturnValue(reservationQueryBuilder),
+    };
+
+    waitlistRepository = {
+      count: jest.fn().mockResolvedValue(0),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -59,6 +71,10 @@ describe('CustomersService', () => {
         {
           provide: getRepositoryToken(ReservationEntity),
           useValue: reservationRepository,
+        },
+        {
+          provide: getRepositoryToken(WaitlistEntryEntity),
+          useValue: waitlistRepository,
         },
       ],
     }).compile();
@@ -130,6 +146,49 @@ describe('CustomersService', () => {
     await expect(service.getVisitHistory('missing')).rejects.toBeInstanceOf(
       NotFoundException,
     );
+  });
+
+  it('removes a customer without reservations or waitlist entries', async () => {
+    customerRepository.findOne.mockResolvedValueOnce({
+      id: 'customer-1',
+      fullName: 'Ana Ruiz',
+      email: 'ana@mail.test',
+      phone: '+5491111111111',
+      preferences: {},
+      notes: null,
+      userId: null,
+    });
+
+    const result = await service.remove('customer-1');
+
+    expect(reservationRepository.count).toHaveBeenCalledWith({
+      where: { customerId: 'customer-1' },
+    });
+    expect(waitlistRepository.count).toHaveBeenCalledWith({
+      where: { customerId: 'customer-1' },
+    });
+    expect(customerRepository.remove).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'customer-1' }),
+    );
+    expect(result).toEqual(expect.objectContaining({ id: 'customer-1' }));
+  });
+
+  it('rejects removing a customer with reservations', async () => {
+    customerRepository.findOne.mockResolvedValueOnce({
+      id: 'customer-1',
+      fullName: 'Ana Ruiz',
+      email: 'ana@mail.test',
+      phone: '+5491111111111',
+      preferences: {},
+      notes: null,
+      userId: null,
+    });
+    reservationRepository.count.mockResolvedValueOnce(1);
+
+    await expect(service.remove('customer-1')).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(customerRepository.remove).not.toHaveBeenCalled();
   });
 
   it('rejects updates that would leave the customer without contact info', async () => {

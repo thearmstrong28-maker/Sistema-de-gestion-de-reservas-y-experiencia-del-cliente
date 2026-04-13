@@ -338,11 +338,6 @@ CREATE TRIGGER trg_users_delete_block
 BEFORE DELETE ON users
 FOR EACH ROW EXECUTE FUNCTION prevent_hard_delete();
 
-DROP TRIGGER IF EXISTS trg_customers_delete_block ON customers;
-CREATE TRIGGER trg_customers_delete_block
-BEFORE DELETE ON customers
-FOR EACH ROW EXECUTE FUNCTION prevent_hard_delete();
-
 DROP TRIGGER IF EXISTS trg_tables_delete_block ON restaurant_tables;
 CREATE TRIGGER trg_tables_delete_block
 BEFORE DELETE ON restaurant_tables

@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
+  deleteCustomer,
   fetchDailyReportComparison,
   fetchDailyReportSummary,
   fetchFrequentCustomers,
@@ -9,6 +10,7 @@ import {
   listReservationsByDate,
   updateCustomer,
 } from '../api/manager'
+import { getApiErrorMessage } from '../api/http'
 import type {
   CustomerWithMetrics,
   DailyComparisonRow,
@@ -103,6 +105,7 @@ export function ManagerPage() {
     phone: '',
     notes: '',
   })
+  const customerEditPanelRef = useRef<HTMLElement | null>(null)
 
   const [customersState, setCustomersState] = useState<ResultState<CustomerWithMetrics[]>>({
     status: 'idle',
@@ -150,11 +153,11 @@ export function ManagerPage() {
         message: data.length ? 'Clientes actualizados.' : 'No hay clientes para mostrar.',
         data,
       })
-    } catch {
+    } catch (error) {
       setCustomersState((previous) => ({
         ...previous,
         status: 'error',
-        message: 'No se pudo cargar el listado de clientes.',
+        message: getApiErrorMessage(error),
       }))
     }
   }
@@ -168,11 +171,11 @@ export function ManagerPage() {
         message: data.length ? 'Historial actualizado.' : 'No hay reservas en esa fecha.',
         data,
       })
-    } catch {
+    } catch (error) {
       setHistoryState((previous) => ({
         ...previous,
         status: 'error',
-        message: 'No se pudo cargar el historial por día.',
+        message: getApiErrorMessage(error),
       }))
     }
   }
@@ -202,25 +205,41 @@ export function ManagerPage() {
     if (summaryResult.status === 'fulfilled') {
       setDailySummaryState({ status: 'success', message: 'Resumen diario actualizado.', data: summaryResult.value })
     } else {
-      setDailySummaryState({ status: 'error', message: 'No se pudo cargar el resumen diario.', data: null })
+      setDailySummaryState({
+        status: 'error',
+        message: getApiErrorMessage(summaryResult.reason),
+        data: null,
+      })
     }
 
     if (comparisonResult.status === 'fulfilled') {
       setComparisonState({ status: 'success', message: 'Comparativo actualizado.', data: comparisonResult.value })
     } else {
-      setComparisonState({ status: 'error', message: 'No se pudo cargar el comparativo.', data: [] })
+      setComparisonState({
+        status: 'error',
+        message: getApiErrorMessage(comparisonResult.reason),
+        data: [],
+      })
     }
 
     if (frequentResult.status === 'fulfilled') {
       setFrequentState({ status: 'success', message: 'Clientes frecuentes actualizados.', data: frequentResult.value })
     } else {
-      setFrequentState({ status: 'error', message: 'No se pudo cargar clientes frecuentes.', data: [] })
+      setFrequentState({
+        status: 'error',
+        message: getApiErrorMessage(frequentResult.reason),
+        data: [],
+      })
     }
 
     if (snapshotsResult.status === 'fulfilled') {
       setSnapshotsState({ status: 'success', message: 'Reportes generados actualizados.', data: snapshotsResult.value })
     } else {
-      setSnapshotsState({ status: 'error', message: 'No se pudieron cargar los reportes generados.', data: [] })
+      setSnapshotsState({
+        status: 'error',
+        message: getApiErrorMessage(snapshotsResult.reason),
+        data: [],
+      })
     }
   }
 
@@ -263,6 +282,18 @@ export function ManagerPage() {
     })
   }
 
+  useEffect(() => {
+    if (!editingCustomerId) {
+      return
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      customerEditPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+
+    return () => window.cancelAnimationFrame(frameId)
+  }, [editingCustomerId])
+
   const cancelEditingCustomer = () => {
     setEditingCustomerId(null)
     setCustomerEditForm({ fullName: '', email: '', phone: '', notes: '' })
@@ -283,8 +314,27 @@ export function ManagerPage() {
       setCustomerActionState({ status: 'success', message: 'Cliente actualizado correctamente.' })
       setEditingCustomerId(null)
       await loadCustomers(searchQuery)
-    } catch {
-      setCustomerActionState({ status: 'error', message: 'No se pudo actualizar el cliente.' })
+    } catch (error) {
+      setCustomerActionState({ status: 'error', message: getApiErrorMessage(error) })
+    }
+  }
+
+  const handleDeleteCustomer = async (customer: CustomerWithMetrics) => {
+    if (!window.confirm(`Eliminar a ${customer.fullName}?`)) {
+      return
+    }
+
+    setCustomerActionState({ status: 'loading', message: 'Eliminando cliente...' })
+
+    try {
+      await deleteCustomer(customer.id)
+      if (editingCustomerId === customer.id) {
+        cancelEditingCustomer()
+      }
+      await loadCustomers(searchQuery)
+      setCustomerActionState({ status: 'success', message: 'Cliente eliminado correctamente.' })
+    } catch (error) {
+      setCustomerActionState({ status: 'error', message: getApiErrorMessage(error) })
     }
   }
 
@@ -376,18 +426,27 @@ export function ManagerPage() {
                         <td>{customer.reservationsCount}</td>
                         <td>{customer.attendedCount}</td>
                         <td>{customer.cancelledCount}</td>
-                        <td>{customer.noShowCount}</td>
-                        <td>
-                          <button
-                            type="button"
-                            className="button button-secondary button-tight"
-                            onClick={() => startEditingCustomer(customer)}
-                          >
-                            Editar
-                          </button>
-                        </td>
-                      </tr>
-                    ))
+                          <td>{customer.noShowCount}</td>
+                          <td>
+                            <div className="history-item-actions">
+                              <button
+                                type="button"
+                                className="button button-secondary button-tight"
+                                onClick={() => startEditingCustomer(customer)}
+                              >
+                                Editar
+                              </button>
+                              <button
+                                type="button"
+                                className="button button-icon-delete button-tight"
+                                onClick={() => handleDeleteCustomer(customer)}
+                              >
+                                Eliminar
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
                   ) : (
                     <tr>
                       <td colSpan={6}>No hay clientes para mostrar.</td>
@@ -399,7 +458,7 @@ export function ManagerPage() {
           </article>
 
           {editingCustomerId ? (
-            <article className="panel form-panel">
+            <article className="panel form-panel" ref={customerEditPanelRef}>
               <div className="panel-heading">
                 <div>
                   <p className="eyebrow">Clientes</p>

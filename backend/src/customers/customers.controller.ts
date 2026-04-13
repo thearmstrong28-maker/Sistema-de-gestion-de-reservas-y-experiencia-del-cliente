@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -34,6 +35,11 @@ export class CustomersController {
     @Body() updateCustomerDto: UpdateCustomerDto,
   ) {
     return this.customersService.update(id, updateCustomerDto);
+  }
+
+  @Delete(':id')
+  remove(@Param('id') id: string) {
+    return this.customersService.remove(id);
   }
 
   @Get(':id/visit-history')
