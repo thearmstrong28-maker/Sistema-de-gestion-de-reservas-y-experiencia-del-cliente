@@ -1,5 +1,0 @@
-import { RoleLoginPage } from './RoleLoginPage'
-
-export function LoginPage() {
-  return <RoleLoginPage />
-}

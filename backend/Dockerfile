@@ -35,7 +35,6 @@ COPY --from=builder /app/dist ./dist
 
 # Copy database scripts and migrations
 COPY database ./database
-COPY scripts ./scripts
 
 # Copy the entrypoint script
 COPY docker-entrypoint.sh ./
