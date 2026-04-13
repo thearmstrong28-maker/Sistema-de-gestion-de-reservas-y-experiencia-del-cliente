@@ -2,7 +2,9 @@ import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios'
 import { useAuthStore } from '../store/auth'
 import type { ApiErrorResponse } from './types'
 
-const baseURL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000'
+// En dev y Docker el proxy de Vite enruta las peticiones al backend.
+// VITE_API_URL solo se necesita para apuntar a un servidor remoto (staging/prod).
+const baseURL = import.meta.env.VITE_API_URL ?? ''
 
 export const api = axios.create({
   baseURL,

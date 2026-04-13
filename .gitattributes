@@ -1,0 +1,28 @@
+# Normalizar line endings al hacer commit
+* text=auto
+
+# Shell scripts: siempre LF (se ejecutan en contenedores Linux)
+*.sh text eol=lf
+docker-entrypoint.sh text eol=lf
+
+# Archivos de texto estándar
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.sql text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.env.example text eol=lf
+
+# Binarios (sin conversión)
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary

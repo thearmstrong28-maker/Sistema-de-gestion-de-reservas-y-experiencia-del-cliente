@@ -80,7 +80,7 @@ export function AppLayout() {
               <NavLink
                 key={tab.to}
                 to={tab.to}
-                end={tab.end}
+                end={'end' in tab ? tab.end : false}
                 className={({ isActive }) => (isActive ? 'tab tab-active' : 'tab')}
               >
                 {tab.label}

@@ -962,8 +962,8 @@ export function AdministrationPage() {
         tables: normalizeTablesLayout(editableTables).map((table) => ({
           tableNumber: table.tableNumber,
           capacity: table.capacity,
-          posX: table.posX,
-          posY: table.posY,
+          posX: table.posX ?? 0,
+          posY: table.posY ?? 0,
           category: table.category ?? 'Normal',
           ...(table.layoutLabel ? { layoutLabel: table.layoutLabel } : {}),
         })),
