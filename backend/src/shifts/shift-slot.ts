@@ -25,13 +25,13 @@ const LEGACY_SHIFT_NAMES: Record<string, ShiftSlot> = {
 const padTimePart = (value: number): string => String(value).padStart(2, '0');
 
 export const formatLocalDateKey = (value: Date): string =>
-  `${value.getFullYear()}-${padTimePart(value.getMonth() + 1)}-${padTimePart(value.getDate())}`;
+  `${value.getUTCFullYear()}-${padTimePart(value.getUTCMonth() + 1)}-${padTimePart(value.getUTCDate())}`;
 
 export const formatLocalTimeKey = (value: Date): string =>
-  `${padTimePart(value.getHours())}:${padTimePart(value.getMinutes())}:${padTimePart(value.getSeconds())}`;
+  `${padTimePart(value.getUTCHours())}:${padTimePart(value.getUTCMinutes())}:${padTimePart(value.getUTCSeconds())}`;
 
 export const createLocalDateTime = (date: string, time: string): Date =>
-  new Date(`${date}T${time}`);
+  new Date(`${date}T${time}Z`);
 
 export const isShiftSlot = (value: unknown): value is ShiftSlot =>
   value === 'matutino' || value === 'vespertino';

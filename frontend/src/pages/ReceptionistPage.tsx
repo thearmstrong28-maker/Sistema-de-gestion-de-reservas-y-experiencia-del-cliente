@@ -190,7 +190,7 @@ const toTimeValue = (minutes: number): string => {
 const getSuggestedReservationDateTime = (): { date: string; time: string; turn: ReceptionistTurn } => {
   const now = new Date()
   const date = toDateInputValue(now.toISOString())
-  const currentMinutes = now.getHours() * 60 + now.getMinutes()
+  const currentMinutes = now.getUTCHours() * 60 + now.getUTCMinutes()
   const roundedMinutes = Math.ceil(currentMinutes / 15) * 15
 
   if (roundedMinutes < 14 * 60) {
@@ -204,7 +204,7 @@ const getSuggestedReservationDateTime = (): { date: string; time: string; turn: 
   }
 
   const tomorrow = new Date(now)
-  tomorrow.setDate(tomorrow.getDate() + 1)
+  tomorrow.setUTCDate(tomorrow.getUTCDate() + 1)
 
   return {
     date: toDateInputValue(tomorrow.toISOString()),

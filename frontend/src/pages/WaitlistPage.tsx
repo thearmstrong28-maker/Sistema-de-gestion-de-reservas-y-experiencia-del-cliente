@@ -43,7 +43,7 @@ const buildWaitlistPreview = (entry: WaitlistEntry) => ({
 export function WaitlistPage() {
   const [createForm, setCreateForm] = useState(emptyCreate)
   const [listForm, setListForm] = useState({
-    date: new Date().toLocaleDateString('en-CA'),
+    date: new Date().toISOString().slice(0, 10),
     shiftId: '',
   })
   const [updateForm, setUpdateForm] = useState(emptyUpdate)
